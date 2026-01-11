@@ -31,6 +31,8 @@ export interface Item {
   storageMaxWeight?: number;
   // Mobility-specific
   movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
+  // Solar panel specific
+  solarRegenRate?: number; // Turns per 1 charge regen
 }
 
 export interface InventoryItem extends Item {
