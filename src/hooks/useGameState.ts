@@ -250,12 +250,19 @@ export function useGameState() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Migration: ensure player exists
-        if (!parsed.player) {
+
+        // Basic validation: ensure we can safely mutate the loaded save
+        if (!parsed || typeof parsed !== 'object') {
+          throw new Error('Invalid save data');
+        }
+
+        // Migration: ensure player exists and is an object
+        if (!('player' in parsed) || !parsed.player || typeof parsed.player !== 'object') {
           parsed.player = createInitialPlayerState();
         }
-        // Migration: ensure baseUpgrades exists
-        if (!parsed.player.baseUpgrades) {
+
+        // Migration: ensure baseUpgrades exists and has numeric fields
+        if (!parsed.player.baseUpgrades || typeof parsed.player.baseUpgrades !== 'object') {
           parsed.player.baseUpgrades = {
             cleaningSlots: 0,
             cleaningSpeed: 0,
@@ -264,37 +271,79 @@ export function useGameState() {
             chargerEfficiency: 0,
           };
         }
-        // Migration: ensure primary helper exists
-        if (!parsed.player.helpers || parsed.player.helpers.length === 0) {
+        const bu = parsed.player.baseUpgrades as Record<string, unknown>;
+        const ensureNumber = (key: string, fallback = 0) => {
+          const v = bu[key];
+          bu[key] = typeof v === 'number' && !isNaN(v) ? v : fallback;
+        };
+        ensureNumber('cleaningSlots');
+        ensureNumber('cleaningSpeed');
+        ensureNumber('workshopTier');
+        ensureNumber('controlCapacity');
+        ensureNumber('chargerEfficiency');
+
+        // Migration: ensure arrays exist
+        if (!Array.isArray(parsed.player.stash)) {
+          parsed.player.stash = [];
+        }
+        if (!Array.isArray(parsed.player.cleaningJobs)) {
+          parsed.player.cleaningJobs = [];
+        }
+
+        // Migration: ensure helpers exist and include a primary helper
+        if (!Array.isArray(parsed.player.helpers) || parsed.player.helpers.length === 0 || !parsed.player.helpers.some((h: HelperRobot) => h?.isPrimary)) {
           parsed.player.helpers = [createPrimaryHelper()];
         }
+
+        // Migration: ensure coordinates exist
+        if (typeof parsed.player.playerX !== 'number' || isNaN(parsed.player.playerX)) {
+          parsed.player.playerX = 0;
+        }
+        if (typeof parsed.player.playerY !== 'number' || isNaN(parsed.player.playerY)) {
+          parsed.player.playerY = 0;
+        }
+        if (parsed.player.currentYardId === undefined) {
+          parsed.player.currentYardId = null;
+        }
+
         // Migration: ensure currentCharge exists
-        if (parsed.player.currentCharge === undefined) {
-          const primary = parsed.player.helpers.find((h: HelperRobot) => h.isPrimary);
+        if (typeof parsed.player.currentCharge !== 'number' || isNaN(parsed.player.currentCharge)) {
+          const primary = (parsed.player.helpers as HelperRobot[]).find(h => h.isPrimary);
           parsed.player.currentCharge = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
         }
-        // Migration: add walls if missing
-        if (parsed.junkyard && !parsed.junkyard.walls) {
+
+        // Migration: ensure junkyard is either null or an object with required arrays
+        if (parsed.junkyard && typeof parsed.junkyard !== 'object') {
+          parsed.junkyard = null;
+        }
+        if (parsed.junkyard && !Array.isArray(parsed.junkyard.walls)) {
           parsed.junkyard.walls = [];
         }
-        // Migration: add terrain if missing
-        if (parsed.junkyard && !parsed.junkyard.terrain) {
+        if (parsed.junkyard && !Array.isArray(parsed.junkyard.terrain)) {
           parsed.junkyard.terrain = [];
         }
-        // Migration: ensure chargerEfficiency exists
-        if (parsed.player.baseUpgrades.chargerEfficiency === undefined) {
-          parsed.player.baseUpgrades.chargerEfficiency = 0;
-        }
+
         // Migration: ensure currency is a valid number
         if (typeof parsed.player.currency !== 'number' || isNaN(parsed.player.currency)) {
           parsed.player.currency = 50;
         }
-        // Load bag items from storage
-        if (parsed.bagItems) {
-          setBagItems(parsed.bagItems);
+
+        // Migration: ensure turnCount exists
+        if (typeof parsed.turnCount !== 'number' || isNaN(parsed.turnCount)) {
+          parsed.turnCount = 0;
         }
+
+        // Load bag items from storage
+        if (!Array.isArray(parsed.bagItems)) {
+          parsed.bagItems = [];
+        }
+        setBagItems(parsed.bagItems);
+
         setGameState(parsed);
-      } catch {
+      } catch (err) {
+        // If the save is corrupted, clear it so the app can recover reliably.
+        localStorage.removeItem(STORAGE_KEY);
+        setBagItems([]);
         setGameState({
           player: createInitialPlayerState(),
           junkyard: null,
