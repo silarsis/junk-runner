@@ -9,7 +9,12 @@ interface ItemTemplate {
   weight: number;
   baseValue: number;
   icon: string;
+  // Category-specific
   batteryCapacity?: number;
+  storageWidth?: number;
+  storageHeight?: number;
+  storageMaxWeight?: number;
+  movementType?: 'basic' | 'diagonal' | 'jump';
 }
 
 export const ITEM_TEMPLATES: ItemTemplate[] = [
@@ -34,8 +39,18 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'High-Capacity Cell', category: 'battery', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 4, baseValue: 250, icon: '⚡', batteryCapacity: 50 },
   { name: 'Quantum Battery', category: 'battery', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 2, baseValue: 500, icon: '💎', batteryCapacity: 75 },
   
-  // Modules
-  { name: 'Carry Pod', category: 'module', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 100, icon: '📦' },
+  // Storage Modules - findable in junkyard
+  { name: 'Salvaged Cargo Pod', category: 'storage', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 80, icon: '📦', storageWidth: 5, storageHeight: 5, storageMaxWeight: 35 },
+  { name: 'Industrial Container', category: 'storage', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 5, baseValue: 150, icon: '🗃️', storageWidth: 6, storageHeight: 6, storageMaxWeight: 45 },
+  { name: 'Quantum Storage', category: 'storage', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 3, baseValue: 300, icon: '💫', storageWidth: 8, storageHeight: 8, storageMaxWeight: 60 },
+  
+  // Mobility Modules - findable in junkyard
+  { name: 'Salvaged Wheels', category: 'mobility', rarity: 'uncommon', sizeW: 2, sizeH: 1, weight: 4, baseValue: 70, icon: '🛞', movementType: 'basic' },
+  { name: 'All-Terrain Treads', category: 'mobility', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 6, baseValue: 140, icon: '⛓️', movementType: 'basic' },
+  { name: 'Spider Legs', category: 'mobility', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 5, baseValue: 280, icon: '🕷️', movementType: 'diagonal' },
+  { name: 'Jump Jets', category: 'mobility', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 3, baseValue: 450, icon: '🚀', movementType: 'jump' },
+  
+  // General Modules
   { name: 'Scanner Array', category: 'module', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 150, icon: '📡' },
   { name: 'Cleaning Assist', category: 'module', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 120, icon: '🧹' },
   
@@ -53,6 +68,12 @@ export const SHOP_BATTERIES: ItemTemplate[] = [
   { name: 'Basic Battery Pack', category: 'battery', rarity: 'common', sizeW: 1, sizeH: 2, weight: 3, baseValue: 80, icon: '🔋', batteryCapacity: 25 },
   { name: 'Enhanced Battery', category: 'battery', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 150, icon: '🔋', batteryCapacity: 35 },
   { name: 'Pro Battery Module', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 4, baseValue: 300, icon: '⚡', batteryCapacity: 50 },
+];
+
+// Storage modules for purchase
+export const SHOP_STORAGE: ItemTemplate[] = [
+  { name: 'Basic Cargo Pod', category: 'storage', rarity: 'common', sizeW: 2, sizeH: 2, weight: 4, baseValue: 100, icon: '📦', storageWidth: 5, storageHeight: 5, storageMaxWeight: 35 },
+  { name: 'Enhanced Container', category: 'storage', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 5, baseValue: 200, icon: '🗃️', storageWidth: 6, storageHeight: 6, storageMaxWeight: 45 },
 ];
 
 // Wall obstacle icons - random impassable debris
@@ -105,4 +126,64 @@ export function getCleaningDuration(item: Item, speedMultiplier: number = 1): nu
   // Base time in milliseconds (2 minutes for 1x1 common)
   const baseTime = 2 * 60 * 1000;
   return Math.floor((baseTime * size * rarityMultiplier[item.rarity]) / speedMultiplier);
+}
+
+// Create default items for the basic helper
+export function createBasicBattery(): Item {
+  return {
+    id: 'basic-battery',
+    name: 'Basic Battery',
+    category: 'battery',
+    rarity: 'common',
+    condition: 100,
+    isDirty: false,
+    sizeW: 1,
+    sizeH: 1,
+    weight: 2,
+    baseValue: 0,
+    hiddenModifiers: [],
+    revealedModifiers: [],
+    icon: '🔋',
+    batteryCapacity: 20,
+  };
+}
+
+export function createBasicStorage(): Item {
+  return {
+    id: 'basic-storage',
+    name: 'Basic Storage',
+    category: 'storage',
+    rarity: 'common',
+    condition: 100,
+    isDirty: false,
+    sizeW: 1,
+    sizeH: 1,
+    weight: 2,
+    baseValue: 0,
+    hiddenModifiers: [],
+    revealedModifiers: [],
+    icon: '📦',
+    storageWidth: 4,
+    storageHeight: 4,
+    storageMaxWeight: 30,
+  };
+}
+
+export function createBasicMobility(): Item {
+  return {
+    id: 'basic-treads',
+    name: 'Tank Treads',
+    category: 'mobility',
+    rarity: 'common',
+    condition: 100,
+    isDirty: false,
+    sizeW: 1,
+    sizeH: 1,
+    weight: 3,
+    baseValue: 0,
+    hiddenModifiers: [],
+    revealedModifiers: [],
+    icon: '⛓️',
+    movementType: 'basic',
+  };
 }

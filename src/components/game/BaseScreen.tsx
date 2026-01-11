@@ -1,18 +1,19 @@
 import { motion } from 'framer-motion';
-import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2, Battery } from 'lucide-react';
+import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2, Battery, Bot } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState, STARTER_BATTERY_CAPACITY } from '@/types/game';
+import { GameState, Bag, BASIC_BATTERY_CAPACITY } from '@/types/game';
 import { cn } from '@/lib/utils';
 
 interface BaseScreenProps {
   gameState: GameState;
   maxBattery: number;
+  currentBag: Bag;
+  bagItemCount: number;
   onEnterJunkyard: () => void;
   onOpenCleaning: () => void;
   onOpenSell: () => void;
   onOpenUpgrades: () => void;
   onOpenWorkshop: () => void;
-  onOpenBatteryShop: () => void;
   onMoveToNextJunkyard: () => void;
   onTransferToStash: () => void;
 }
@@ -20,24 +21,26 @@ interface BaseScreenProps {
 export function BaseScreen({
   gameState,
   maxBattery,
+  currentBag,
+  bagItemCount,
   onEnterJunkyard,
   onOpenCleaning,
   onOpenSell,
   onOpenUpgrades,
   onOpenWorkshop,
-  onOpenBatteryShop,
   onMoveToNextJunkyard,
   onTransferToStash,
 }: BaseScreenProps) {
   const { player } = gameState;
-  const bagItemCount = player.bag.items.length;
   const stashItemCount = player.stash.length;
   const cleaningCount = player.cleaningJobs.length;
   const activeJunkyard = gameState.junkyard !== null;
   
-  const equippedBattery = player.battery.equippedBatteryId 
-    ? player.stash.find(i => i.id === player.battery.equippedBatteryId)
-    : null;
+  // Get primary helper info
+  const primaryHelper = player.helpers.find(h => h.isPrimary);
+  const helperBattery = primaryHelper?.components.battery;
+  const helperStorage = primaryHelper?.components.modules.find(m => m?.category === 'storage');
+  const helperMobility = primaryHelper?.components.mobility;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -96,31 +99,55 @@ export function BaseScreen({
           </motion.div>
         </div>
 
-        {/* Battery Status */}
+        {/* Primary Helper Status */}
         <motion.div 
-          className="industrial-panel p-3 rounded-lg flex items-center justify-between"
+          className="industrial-panel p-4 rounded-lg"
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.25 }}
         >
-          <div className="flex items-center gap-3">
-            <Battery className="w-5 h-5 text-primary" />
+          <div className="flex items-center gap-3 mb-3">
+            <Bot className="w-6 h-6 text-primary" />
             <div>
-              <p className="text-sm font-medium">
-                {equippedBattery ? equippedBattery.name : 'Starter Battery'}
-              </p>
-              <p className="text-xs text-muted-foreground">
-                {player.battery.currentCharge}/{maxBattery} charge
-              </p>
+              <p className="text-sm font-industrial">Your Robot</p>
+              <p className="text-xs text-muted-foreground">Basic Frame</p>
             </div>
           </div>
-          <div className="w-24 h-3 bg-muted rounded-full overflow-hidden">
-            <motion.div
-              className="h-full bg-primary"
-              initial={{ width: 0 }}
-              animate={{ width: `${(player.battery.currentCharge / maxBattery) * 100}%` }}
-              transition={{ duration: 0.3 }}
-            />
+          
+          <div className="grid grid-cols-3 gap-2 text-xs">
+            {/* Mobility */}
+            <div className="p-2 rounded bg-muted/30 text-center">
+              <span className="text-lg">{helperMobility?.icon || '⛓️'}</span>
+              <p className="text-muted-foreground mt-1">{helperMobility?.name || 'Tank Treads'}</p>
+            </div>
+            
+            {/* Storage */}
+            <div className="p-2 rounded bg-muted/30 text-center">
+              <span className="text-lg">{helperStorage?.icon || '📦'}</span>
+              <p className="text-muted-foreground mt-1">
+                {helperStorage ? `${helperStorage.storageWidth}x${helperStorage.storageHeight}` : '4x4'}
+              </p>
+            </div>
+            
+            {/* Battery */}
+            <div className="p-2 rounded bg-muted/30 text-center">
+              <span className="text-lg">{helperBattery?.icon || '🔋'}</span>
+              <p className="text-muted-foreground mt-1">{maxBattery} moves</p>
+            </div>
+          </div>
+          
+          {/* Charge Bar */}
+          <div className="mt-3 flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Charge:</span>
+            <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+              <motion.div
+                className="h-full bg-primary"
+                initial={{ width: 0 }}
+                animate={{ width: `${(player.currentCharge / maxBattery) * 100}%` }}
+                transition={{ duration: 0.3 }}
+              />
+            </div>
+            <span className="text-xs font-mono">{player.currentCharge}/{maxBattery}</span>
           </div>
         </motion.div>
 
@@ -219,24 +246,9 @@ export function BaseScreen({
             <Button
               variant="nav"
               className="w-full h-16 flex-col gap-1"
-              onClick={onOpenBatteryShop}
-            >
-              <Battery className="w-5 h-5" />
-              <span className="text-xs">Batteries</span>
-            </Button>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.55 }}
-          >
-            <Button
-              variant="nav"
-              className="w-full h-16 flex-col gap-1"
               onClick={onOpenWorkshop}
             >
-              <Wrench className="w-5 h-5" />
+              <Bot className="w-5 h-5" />
               <span className="text-xs">Workshop</span>
             </Button>
           </motion.div>

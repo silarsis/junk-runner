@@ -1,8 +1,8 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Bot, Wrench, Battery, Plus, Trash2, ArrowLeft } from 'lucide-react';
+import { X, Bot, Wrench, Battery, Plus, Trash2, ArrowLeft, Cog } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { HelperRobot, Item, BatteryState, STARTER_BATTERY_CAPACITY } from '@/types/game';
+import { HelperRobot, Item, BASIC_BATTERY_CAPACITY } from '@/types/game';
 import { HELPER_FRAMES } from '@/data/upgradeData';
 import { cn } from '@/lib/utils';
 
@@ -11,55 +11,63 @@ interface WorkshopScreenProps {
   controlCapacity: number;
   currency: number;
   stash: Item[];
-  battery: BatteryState;
   onClose: () => void;
-  onEquipBattery: (batteryId: string | null) => void;
-  onInstallModule: (helperId: string, slotIndex: number, item: Item) => void;
-  onRemoveModule: (helperId: string, slotIndex: number) => void;
+  onInstallComponent: (helperId: string, slotType: 'mobility' | 'battery' | 'module', item: Item, moduleIndex?: number) => void;
+  onRemoveComponent: (helperId: string, slotType: 'mobility' | 'battery' | 'module', moduleIndex?: number) => void;
 }
+
+type SlotType = 'mobility' | 'battery' | 'module';
 
 export function WorkshopScreen({
   helpers,
   controlCapacity,
   currency,
   stash,
-  battery,
   onClose,
-  onEquipBattery,
-  onInstallModule,
-  onRemoveModule,
+  onInstallComponent,
+  onRemoveComponent,
 }: WorkshopScreenProps) {
   const [selectedHelperId, setSelectedHelperId] = useState<string | null>(null);
-  const [selectingModuleSlot, setSelectingModuleSlot] = useState<number | null>(null);
+  const [selectingSlot, setSelectingSlot] = useState<{ type: SlotType; index?: number } | null>(null);
   
   const deployedCount = helpers.filter(h => h.isDeployed).length;
   const selectedHelper = helpers.find(h => h.id === selectedHelperId);
   
-  // Get batteries and modules from stash
-  const availableBatteries = stash.filter(i => i.category === 'battery');
-  const availableModules = stash.filter(i => i.category === 'module');
-  const equippedBattery = stash.find(i => i.id === battery.equippedBatteryId);
-
-  const handleSelectModuleSlot = (slotIndex: number) => {
-    if (selectedHelper?.modules[slotIndex]) {
-      // Remove module from slot
-      onRemoveModule(selectedHelper.id, slotIndex);
-    } else {
-      // Select slot for installing
-      setSelectingModuleSlot(slotIndex);
+  // Get available items for each slot type
+  const getAvailableItems = (slotType: SlotType) => {
+    switch (slotType) {
+      case 'mobility':
+        return stash.filter(i => i.category === 'mobility');
+      case 'battery':
+        return stash.filter(i => i.category === 'battery');
+      case 'module':
+        return stash.filter(i => i.category === 'module' || i.category === 'storage');
+      default:
+        return [];
     }
   };
 
-  const handleInstallModule = (item: Item) => {
-    if (selectedHelper && selectingModuleSlot !== null) {
-      onInstallModule(selectedHelper.id, selectingModuleSlot, item);
-      setSelectingModuleSlot(null);
+  const handleInstallItem = (item: Item) => {
+    if (selectedHelper && selectingSlot) {
+      onInstallComponent(selectedHelper.id, selectingSlot.type, item, selectingSlot.index);
+      setSelectingSlot(null);
     }
+  };
+
+  const handleRemoveComponent = (slotType: SlotType, moduleIndex?: number) => {
+    if (selectedHelper) {
+      onRemoveComponent(selectedHelper.id, slotType, moduleIndex);
+    }
+  };
+
+  const isBasicComponent = (component: Item | null | undefined) => {
+    return component?.id.startsWith('basic-');
   };
 
   // Helper Engineering View
   if (selectedHelper) {
     const frame = HELPER_FRAMES[selectedHelper.frameId];
+    const { mobility, modules, battery } = selectedHelper.components;
     
     return (
       <motion.div
@@ -74,7 +82,7 @@ export function WorkshopScreen({
             <Button variant="ghost" size="icon" onClick={() => setSelectedHelperId(null)}>
               <ArrowLeft className="w-5 h-5" />
             </Button>
-            <h2 className="text-xl font-industrial text-primary">Engineer Helper</h2>
+            <h2 className="text-xl font-industrial text-primary">Engineer Robot</h2>
           </div>
           <Button variant="ghost" size="icon" onClick={onClose}>
             <X className="w-5 h-5" />
@@ -89,91 +97,193 @@ export function WorkshopScreen({
               <div>
                 <h3 className="font-industrial text-lg">{frame.name}</h3>
                 <p className="text-sm text-muted-foreground">
-                  +{frame.carryBonus} carry • {frame.moduleSlots} slots
+                  {frame.slots.mobilitySlots} mobility • {frame.slots.moduleSlots} modules • {frame.slots.batterySlots} battery
                 </p>
+                {selectedHelper.isPrimary && (
+                  <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded mt-1 inline-block">
+                    Primary Robot
+                  </span>
+                )}
               </div>
             </div>
           </div>
 
+          {/* Mobility Slot */}
+          <section>
+            <h3 className="text-sm font-industrial text-muted-foreground mb-3 flex items-center gap-2">
+              <Cog className="w-4 h-4" />
+              Mobility
+            </h3>
+            <motion.button
+              onClick={() => !isBasicComponent(mobility) && handleRemoveComponent('mobility')}
+              className={cn(
+                "w-full industrial-panel p-4 rounded-lg flex items-center gap-4 transition-colors",
+                !isBasicComponent(mobility) && "hover:bg-destructive/10"
+              )}
+              whileTap={{ scale: 0.98 }}
+            >
+              <span className="text-3xl">{mobility?.icon || '⛓️'}</span>
+              <div className="flex-1 text-left">
+                <p className="font-medium">{mobility?.name || 'Tank Treads'}</p>
+                <p className="text-xs text-muted-foreground capitalize">
+                  {mobility?.movementType || 'basic'} movement
+                </p>
+              </div>
+              {!isBasicComponent(mobility) ? (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Remove
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Basic</span>
+              )}
+            </motion.button>
+            {getAvailableItems('mobility').length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full"
+                onClick={() => setSelectingSlot({ type: 'mobility' })}
+              >
+                <Plus className="w-4 h-4 mr-2" /> Install Different Mobility
+              </Button>
+            )}
+          </section>
+
+          {/* Battery Slot */}
+          <section>
+            <h3 className="text-sm font-industrial text-muted-foreground mb-3 flex items-center gap-2">
+              <Battery className="w-4 h-4" />
+              Battery
+            </h3>
+            <motion.button
+              onClick={() => !isBasicComponent(battery) && handleRemoveComponent('battery')}
+              className={cn(
+                "w-full industrial-panel p-4 rounded-lg flex items-center gap-4 transition-colors",
+                !isBasicComponent(battery) && "hover:bg-destructive/10"
+              )}
+              whileTap={{ scale: 0.98 }}
+            >
+              <span className="text-3xl">{battery?.icon || '🔋'}</span>
+              <div className="flex-1 text-left">
+                <p className="font-medium">{battery?.name || 'Basic Battery'}</p>
+                <p className="text-xs text-muted-foreground">
+                  {battery?.batteryCapacity || BASIC_BATTERY_CAPACITY} moves capacity
+                </p>
+              </div>
+              {!isBasicComponent(battery) ? (
+                <span className="text-xs text-muted-foreground flex items-center gap-1">
+                  <Trash2 className="w-3 h-3" /> Remove
+                </span>
+              ) : (
+                <span className="text-xs text-muted-foreground">Basic</span>
+              )}
+            </motion.button>
+            {getAvailableItems('battery').length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                className="mt-2 w-full"
+                onClick={() => setSelectingSlot({ type: 'battery' })}
+              >
+                <Plus className="w-4 h-4 mr-2" /> Install Different Battery
+              </Button>
+            )}
+          </section>
+
           {/* Module Slots */}
           <section>
-            <h3 className="text-sm font-industrial text-muted-foreground mb-3">
-              Module Slots ({selectedHelper.modules.filter(Boolean).length}/{frame.moduleSlots})
+            <h3 className="text-sm font-industrial text-muted-foreground mb-3 flex items-center gap-2">
+              <Wrench className="w-4 h-4" />
+              Modules ({modules.length}/{frame.slots.moduleSlots})
             </h3>
-            <div className="grid grid-cols-2 gap-3">
-              {Array.from({ length: frame.moduleSlots }).map((_, i) => {
-                const module = selectedHelper.modules[i];
-                return (
-                  <motion.button
-                    key={i}
-                    onClick={() => handleSelectModuleSlot(i)}
-                    className={cn(
-                      "industrial-panel p-4 rounded-lg flex flex-col items-center justify-center gap-2 min-h-[100px] transition-colors",
-                      selectingModuleSlot === i && "ring-2 ring-primary",
-                      module ? "hover:bg-destructive/10" : "hover:bg-primary/10"
-                    )}
-                    whileTap={{ scale: 0.98 }}
-                  >
-                    {module ? (
-                      <>
-                        <span className="text-3xl">{module.icon}</span>
-                        <span className="text-xs font-medium">{module.name}</span>
-                        <span className="text-xs text-muted-foreground flex items-center gap-1">
-                          <Trash2 className="w-3 h-3" /> Tap to remove
-                        </span>
-                      </>
-                    ) : (
-                      <>
-                        <Plus className="w-6 h-6 text-muted-foreground" />
-                        <span className="text-xs text-muted-foreground">Empty Slot</span>
-                      </>
-                    )}
-                  </motion.button>
-                );
-              })}
+            <div className="space-y-2">
+              {modules.map((module, idx) => (
+                <motion.button
+                  key={idx}
+                  onClick={() => !isBasicComponent(module) && handleRemoveComponent('module', idx)}
+                  className={cn(
+                    "w-full industrial-panel p-4 rounded-lg flex items-center gap-4 transition-colors",
+                    !isBasicComponent(module) && "hover:bg-destructive/10"
+                  )}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <span className="text-3xl">{module?.icon || '📦'}</span>
+                  <div className="flex-1 text-left">
+                    <p className="font-medium">{module?.name || 'Unknown Module'}</p>
+                    <p className="text-xs text-muted-foreground capitalize">
+                      {module?.category === 'storage' 
+                        ? `${module.storageWidth}x${module.storageHeight} storage`
+                        : module?.rarity || 'common'}
+                    </p>
+                  </div>
+                  {!isBasicComponent(module) ? (
+                    <span className="text-xs text-muted-foreground flex items-center gap-1">
+                      <Trash2 className="w-3 h-3" /> Remove
+                    </span>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">Basic</span>
+                  )}
+                </motion.button>
+              ))}
+              
+              {/* Add module button */}
+              {modules.length < frame.slots.moduleSlots && getAvailableItems('module').length > 0 && (
+                <Button
+                  variant="outline"
+                  className="w-full h-16"
+                  onClick={() => setSelectingSlot({ type: 'module', index: modules.length })}
+                >
+                  <Plus className="w-5 h-5 mr-2" /> Add Module
+                </Button>
+              )}
             </div>
           </section>
 
-          {/* Module Selection */}
+          {/* Item Selection Modal */}
           <AnimatePresence>
-            {selectingModuleSlot !== null && (
-              <motion.section
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
+            {selectingSlot && (
+              <motion.div
+                className="fixed inset-0 z-60 bg-background/95 flex flex-col"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
               >
-                <div className="flex items-center justify-between mb-3">
-                  <h3 className="text-sm font-industrial text-muted-foreground">
-                    Select Module from Stash
+                <header className="industrial-panel p-4 flex items-center justify-between">
+                  <h3 className="text-lg font-industrial text-primary">
+                    Select {selectingSlot.type.charAt(0).toUpperCase() + selectingSlot.type.slice(1)}
                   </h3>
-                  <Button variant="ghost" size="sm" onClick={() => setSelectingModuleSlot(null)}>
-                    Cancel
+                  <Button variant="ghost" size="icon" onClick={() => setSelectingSlot(null)}>
+                    <X className="w-5 h-5" />
                   </Button>
-                </div>
-                <div className="space-y-2">
-                  {availableModules.length === 0 ? (
-                    <p className="text-sm text-muted-foreground text-center py-4">
-                      No modules in stash. Find them in the junkyard!
+                </header>
+                <div className="flex-1 p-4 overflow-y-auto space-y-2">
+                  {getAvailableItems(selectingSlot.type).map(item => (
+                    <motion.button
+                      key={item.id}
+                      onClick={() => handleInstallItem(item)}
+                      className="w-full industrial-panel p-4 rounded-lg flex items-center gap-4 hover:bg-primary/10 transition-colors"
+                      whileTap={{ scale: 0.98 }}
+                    >
+                      <span className="text-3xl">{item.icon}</span>
+                      <div className="flex-1 text-left">
+                        <p className="font-medium">{item.name}</p>
+                        <p className="text-xs text-muted-foreground capitalize">
+                          {item.category === 'battery' && `${item.batteryCapacity} moves`}
+                          {item.category === 'storage' && `${item.storageWidth}x${item.storageHeight} storage`}
+                          {item.category === 'mobility' && `${item.movementType} movement`}
+                          {item.category === 'module' && item.rarity}
+                        </p>
+                      </div>
+                      <Plus className="w-5 h-5 text-primary" />
+                    </motion.button>
+                  ))}
+                  {getAvailableItems(selectingSlot.type).length === 0 && (
+                    <p className="text-center text-muted-foreground py-8">
+                      No compatible items in stash
                     </p>
-                  ) : (
-                    availableModules.map(module => (
-                      <motion.button
-                        key={module.id}
-                        onClick={() => handleInstallModule(module)}
-                        className="w-full industrial-panel p-3 rounded-lg flex items-center gap-3 hover:bg-primary/10 transition-colors"
-                        whileTap={{ scale: 0.98 }}
-                      >
-                        <span className="text-2xl">{module.icon}</span>
-                        <div className="flex-1 text-left">
-                          <p className="text-sm font-medium">{module.name}</p>
-                          <p className="text-xs text-muted-foreground capitalize">{module.rarity}</p>
-                        </div>
-                        <Plus className="w-5 h-5 text-primary" />
-                      </motion.button>
-                    ))
                   )}
                 </div>
-              </motion.section>
+              </motion.div>
             )}
           </AnimatePresence>
         </main>
@@ -202,92 +312,31 @@ export function WorkshopScreen({
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bot className="w-5 h-5 text-primary" />
-              <span className="text-sm text-muted-foreground">Deployed</span>
+              <span className="text-sm text-muted-foreground">Robots</span>
             </div>
             <span className="font-mono text-lg">
-              {deployedCount}/{controlCapacity}
+              {helpers.length}/{controlCapacity}
             </span>
           </div>
         </div>
 
-        {/* Battery Section */}
-        <section className="mb-6">
-          <h3 className="text-sm font-industrial text-muted-foreground mb-3">
-            <Battery className="w-4 h-4 inline mr-2" />
-            Robot Battery
-          </h3>
-          <div className="industrial-panel p-4 rounded-lg space-y-3">
-            {/* Currently Equipped */}
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <span className="text-2xl">{equippedBattery?.icon || '🔋'}</span>
-                <div>
-                  <p className="text-sm font-medium">
-                    {equippedBattery?.name || 'Starter Battery'}
-                  </p>
-                  <p className="text-xs text-muted-foreground">
-                    Capacity: {equippedBattery?.batteryCapacity || STARTER_BATTERY_CAPACITY} moves
-                  </p>
-                </div>
-              </div>
-              {equippedBattery && (
-                <Button 
-                  variant="outline" 
-                  size="sm"
-                  onClick={() => onEquipBattery(null)}
-                >
-                  Unequip
-                </Button>
-              )}
-            </div>
-            
-            {/* Available Batteries */}
-            {availableBatteries.length > 0 && (
-              <div className="border-t border-border pt-3 space-y-2">
-                <p className="text-xs text-muted-foreground">Available in stash:</p>
-                {availableBatteries.map(bat => (
-                  <div 
-                    key={bat.id} 
-                    className="flex items-center justify-between p-2 rounded bg-muted/30"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="text-xl">{bat.icon}</span>
-                      <div>
-                        <p className="text-sm">{bat.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {bat.batteryCapacity} moves
-                        </p>
-                      </div>
-                    </div>
-                    <Button 
-                      variant="steel" 
-                      size="sm"
-                      onClick={() => onEquipBattery(bat.id)}
-                    >
-                      Equip
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-        </section>
-
         {/* Helpers List */}
         <section className="mb-6">
           <h3 className="text-sm font-industrial text-muted-foreground mb-3">
-            Your Helpers ({helpers.length})
+            Your Robots ({helpers.length})
           </h3>
           <div className="space-y-3">
             {helpers.map(helper => {
               const frame = HELPER_FRAMES[helper.frameId];
+              const battery = helper.components.battery;
+              const moduleCount = helper.components.modules.length;
               
               return (
                 <motion.div
                   key={helper.id}
                   className={cn(
                     "industrial-panel p-4 rounded-lg",
-                    helper.isDeployed && "ring-2 ring-primary"
+                    helper.isPrimary && "ring-2 ring-primary"
                   )}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
@@ -297,65 +346,51 @@ export function WorkshopScreen({
                     <div className="flex-1">
                       <h4 className="font-industrial">{frame.name}</h4>
                       <p className="text-xs text-muted-foreground">
-                        +{frame.carryBonus} carry • {helper.modules.filter(Boolean).length}/{frame.moduleSlots} modules
+                        {battery?.batteryCapacity || BASIC_BATTERY_CAPACITY} moves • {moduleCount}/{frame.slots.moduleSlots} modules
                       </p>
+                      {helper.isPrimary && (
+                        <span className="text-xs bg-primary/20 text-primary px-2 py-0.5 rounded mt-1 inline-block">
+                          Primary
+                        </span>
+                      )}
                     </div>
-                    <div className="flex items-center gap-2">
-                      <div className={cn(
-                        "px-2 py-1 rounded text-xs font-industrial",
-                        helper.isDeployed ? "bg-primary text-primary-foreground" : "bg-muted"
-                      )}>
-                        {helper.isDeployed ? 'Active' : 'Idle'}
-                      </div>
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => setSelectedHelperId(helper.id)}
-                      >
-                        <Wrench className="w-4 h-4" />
-                      </Button>
-                    </div>
+                    <Button 
+                      variant="steel" 
+                      size="sm"
+                      onClick={() => setSelectedHelperId(helper.id)}
+                    >
+                      <Wrench className="w-4 h-4 mr-1" />
+                      Engineer
+                    </Button>
                   </div>
                   
-                  {/* Module Slots Preview */}
+                  {/* Component Preview */}
                   <div className="flex gap-2 mt-3">
-                    {Array.from({ length: frame.moduleSlots }).map((_, i) => {
-                      const module = helper.modules[i];
-                      return (
-                        <div
-                          key={i}
-                          className={cn(
-                            "flex-1 h-12 rounded border-2 border-dashed flex items-center justify-center",
-                            module ? "border-primary bg-primary/10" : "border-border"
-                          )}
-                        >
-                          {module ? (
-                            <span className="text-xl">{module.icon}</span>
-                          ) : (
-                            <span className="text-xs text-muted-foreground">Empty</span>
-                          )}
-                        </div>
-                      );
-                    })}
+                    <div className="flex-1 h-10 rounded border border-border flex items-center justify-center gap-1 bg-muted/20">
+                      <span className="text-sm">{helper.components.mobility?.icon || '⛓️'}</span>
+                    </div>
+                    <div className="flex-1 h-10 rounded border border-border flex items-center justify-center gap-1 bg-muted/20">
+                      <span className="text-sm">{battery?.icon || '🔋'}</span>
+                    </div>
+                    {helper.components.modules.map((module, idx) => (
+                      <div key={idx} className="flex-1 h-10 rounded border border-border flex items-center justify-center bg-muted/20">
+                        <span className="text-sm">{module?.icon || '📦'}</span>
+                      </div>
+                    ))}
                   </div>
                 </motion.div>
               );
             })}
-            {helpers.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">
-                No helpers built yet
-              </p>
-            )}
           </div>
         </section>
 
-        {/* Build New Helper */}
+        {/* Build New Helper (placeholder) */}
         <section>
           <h3 className="text-sm font-industrial text-muted-foreground mb-3">
-            Build New Helper
+            Build New Robot
           </h3>
           <div className="space-y-3">
-            {Object.values(HELPER_FRAMES).map(frame => (
+            {Object.values(HELPER_FRAMES).filter(f => f.id !== 'basic').map(frame => (
               <motion.div
                 key={frame.id}
                 className="industrial-panel p-4 rounded-lg"
@@ -367,7 +402,7 @@ export function WorkshopScreen({
                   <div className="flex-1">
                     <h4 className="font-industrial">{frame.name}</h4>
                     <p className="text-xs text-muted-foreground">
-                      +{frame.carryBonus} carry • {frame.moduleSlots} module slots
+                      {frame.slots.mobilitySlots} mobility • {frame.slots.moduleSlots} modules • {frame.slots.batterySlots} battery
                     </p>
                     <p className="text-xs text-muted-foreground mt-1">
                       Requires: {frame.requiredComponents.join(', ')}

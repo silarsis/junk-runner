@@ -1,6 +1,6 @@
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
-export type ItemCategory = 'scrap' | 'component' | 'module' | 'junk' | 'battery';
+export type ItemCategory = 'scrap' | 'component' | 'module' | 'junk' | 'battery' | 'mobility' | 'storage';
 
 export type ModifierType = 'carry_bonus' | 'reveal_bonus' | 'cleaning_speed' | 'sell_bonus' | 'battery_capacity';
 
@@ -25,6 +25,12 @@ export interface Item {
   icon: string;
   // Battery-specific
   batteryCapacity?: number;
+  // Storage-specific
+  storageWidth?: number;
+  storageHeight?: number;
+  storageMaxWeight?: number;
+  // Mobility-specific
+  movementType?: 'basic' | 'diagonal' | 'jump';
 }
 
 export interface InventoryItem extends Item {
@@ -80,42 +86,46 @@ export interface CleaningJob {
   duration: number; // in milliseconds
 }
 
-export type FrameType = 'crawler' | 'scout';
+export type FrameType = 'basic' | 'crawler' | 'scout';
+
+// Slot types for helper frames
+export interface FrameSlots {
+  mobilitySlots: number;
+  moduleSlots: number;
+  batterySlots: number;
+}
 
 export interface HelperFrame {
   id: FrameType;
   name: string;
-  carryBonus: number;
-  moduleSlots: number;
+  slots: FrameSlots;
   icon: string;
+}
+
+// Equipped components on a helper
+export interface HelperComponents {
+  mobility: Item | null;  // Mobility module (treads, wheels, legs)
+  modules: Item[];        // General modules (storage, scanner, etc.)
+  battery: Item | null;   // Power source
 }
 
 export interface HelperRobot {
   id: string;
   frameId: FrameType;
-  modules: Item[];
+  components: HelperComponents;
   isDeployed: boolean;
+  isPrimary: boolean; // The player's main robot
 }
 
 export interface BaseUpgrades {
-  bagWidth: number;
-  bagHeight: number;
-  bagMaxWeight: number;
   cleaningSlots: number;
   cleaningSpeed: number; // multiplier, 1.0 = base
   workshopTier: number;
   controlCapacity: number;
 }
 
-// Battery state - equipped battery determines max charge
-export interface BatteryState {
-  currentCharge: number;
-  equippedBatteryId: string | null; // ID of battery item from stash, null = starter battery
-}
-
 export interface PlayerState {
   currency: number;
-  bag: Bag;
   stash: Item[];
   currentYardId: string | null;
   baseUpgrades: BaseUpgrades;
@@ -123,7 +133,7 @@ export interface PlayerState {
   cleaningJobs: CleaningJob[];
   playerX: number;
   playerY: number;
-  battery: BatteryState;
+  currentCharge: number; // Current battery charge for active helper
 }
 
 export interface GameState {
@@ -132,5 +142,8 @@ export interface GameState {
   turnCount: number;
 }
 
-// Constants
-export const STARTER_BATTERY_CAPACITY = 20;
+// Default values for basic components
+export const BASIC_BATTERY_CAPACITY = 20;
+export const BASIC_STORAGE_WIDTH = 4;
+export const BASIC_STORAGE_HEIGHT = 4;
+export const BASIC_STORAGE_WEIGHT = 30;

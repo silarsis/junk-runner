@@ -8,14 +8,15 @@ import { CleaningScreen } from '@/components/game/CleaningScreen';
 import { SellScreen } from '@/components/game/SellScreen';
 import { UpgradesScreen } from '@/components/game/UpgradesScreen';
 import { WorkshopScreen } from '@/components/game/WorkshopScreen';
-import { BatteryShopScreen } from '@/components/game/BatteryShopScreen';
 
-type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop' | 'battery';
+type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop';
 
 const Index = () => {
   const {
     gameState,
     isLoading,
+    bagItems,
+    getCurrentBag,
     enterJunkyard,
     movePlayer,
     getCurrentPile,
@@ -27,11 +28,9 @@ const Index = () => {
     sellItem,
     transferToStash,
     purchaseUpgrade,
-    equipBattery,
-    purchaseBattery,
+    installComponent,
+    removeComponent,
     getMaxBattery,
-    installModule,
-    removeModule,
   } = useGameState();
 
   const [currentScreen, setCurrentScreen] = useState<Screen>('base');
@@ -68,6 +67,7 @@ const Index = () => {
   const maxCleaningSlots = 1 + gameState.player.baseUpgrades.cleaningSlots;
   const controlCapacity = 1 + gameState.player.baseUpgrades.controlCapacity;
   const maxBattery = getMaxBattery();
+  const currentBag = getCurrentBag();
 
   return (
     <div className="min-h-screen bg-background">
@@ -77,12 +77,13 @@ const Index = () => {
             key="base"
             gameState={gameState}
             maxBattery={maxBattery}
+            currentBag={currentBag}
+            bagItemCount={bagItems.length}
             onEnterJunkyard={handleEnterJunkyard}
             onOpenCleaning={() => setCurrentScreen('cleaning')}
             onOpenSell={() => setCurrentScreen('sell')}
             onOpenUpgrades={() => setCurrentScreen('upgrades')}
             onOpenWorkshop={() => setCurrentScreen('workshop')}
-            onOpenBatteryShop={() => setCurrentScreen('battery')}
             onMoveToNextJunkyard={handleMoveToNextJunkyard}
             onTransferToStash={transferToStash}
           />
@@ -93,6 +94,7 @@ const Index = () => {
             key="junkyard"
             gameState={gameState}
             maxBattery={maxBattery}
+            currentBag={currentBag}
             onMove={movePlayer}
             currentPile={currentPile}
             onSearch={searchPile}
@@ -139,23 +141,9 @@ const Index = () => {
             controlCapacity={controlCapacity}
             currency={gameState.player.currency}
             stash={gameState.player.stash}
-            battery={gameState.player.battery}
             onClose={() => setCurrentScreen('base')}
-            onEquipBattery={equipBattery}
-            onInstallModule={installModule}
-            onRemoveModule={removeModule}
-          />
-        )}
-
-        {currentScreen === 'battery' && (
-          <BatteryShopScreen
-            key="battery"
-            stash={gameState.player.stash}
-            equippedBatteryId={gameState.player.battery.equippedBatteryId}
-            currency={gameState.player.currency}
-            onEquipBattery={equipBattery}
-            onPurchaseBattery={purchaseBattery}
-            onClose={() => setCurrentScreen('base')}
+            onInstallComponent={installComponent}
+            onRemoveComponent={removeComponent}
           />
         )}
       </AnimatePresence>
@@ -164,7 +152,7 @@ const Index = () => {
       <AnimatePresence>
         {showInventory && (
           <InventoryModal
-            bag={gameState.player.bag}
+            bag={currentBag}
             isOpen={showInventory}
             onClose={() => setShowInventory(false)}
           />
