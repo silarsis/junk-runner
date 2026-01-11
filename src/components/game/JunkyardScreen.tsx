@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { ChevronUp, ChevronDown, ChevronLeft, ChevronRight, Search, Home, Package } from 'lucide-react';
+import { Search, Home, Package } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameState, JunkPile } from '@/types/game';
 import { cn } from '@/lib/utils';
@@ -32,6 +32,22 @@ export function JunkyardScreen({
     return 'bg-pile-active';
   };
 
+  const handleTileClick = (x: number, y: number) => {
+    const dx = x - player.playerX;
+    const dy = y - player.playerY;
+    
+    // Only allow moving to adjacent tiles (orthogonal movement)
+    if (Math.abs(dx) + Math.abs(dy) === 1) {
+      onMove(dx, dy);
+    }
+  };
+
+  const isAdjacentToPlayer = (x: number, y: number) => {
+    const dx = Math.abs(x - player.playerX);
+    const dy = Math.abs(y - player.playerY);
+    return dx + dy === 1;
+  };
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       {/* Header */}
@@ -56,13 +72,13 @@ export function JunkyardScreen({
         </Button>
       </header>
 
-      {/* Map Grid */}
-      <main className="flex-1 p-2 flex flex-col items-center justify-center">
+      {/* Map Grid - Larger cells, tappable */}
+      <main className="flex-1 p-3 flex flex-col items-center justify-center overflow-auto">
         <div 
-          className="junk-grid w-full max-w-[min(90vw,400px)] aspect-square"
+          className="junk-grid w-full max-w-[min(95vw,500px)]"
           style={{ 
-            gridTemplateColumns: `repeat(${junkyard.width}, 1fr)`,
-            gridTemplateRows: `repeat(${junkyard.height}, 1fr)`,
+            gridTemplateColumns: `repeat(${junkyard.width}, minmax(32px, 1fr))`,
+            gap: '3px',
           }}
         >
           {Array.from({ length: junkyard.height }).map((_, y) =>
@@ -71,19 +87,27 @@ export function JunkyardScreen({
               const isPlayer = x === player.playerX && y === player.playerY;
               const pile = junkyard.piles.find(p => p.x === x && p.y === y);
               const droppedItem = junkyard.droppedItems.find(d => d.x === x && d.y === y);
+              const isAdjacent = isAdjacentToPlayer(x, y);
+              const canMoveTo = isRevealed && isAdjacent && !isPlayer;
 
               return (
-                <motion.div
+                <motion.button
                   key={`${x}-${y}`}
                   className={cn(
-                    "junk-cell relative flex items-center justify-center text-xs",
-                    !isRevealed && "fog",
-                    isRevealed && "revealed",
-                    isPlayer && "ring-2 ring-primary ring-inset"
+                    "aspect-square relative flex items-center justify-center rounded-sm transition-all",
+                    "min-h-[32px] min-w-[32px]",
+                    !isRevealed && "bg-fog",
+                    isRevealed && "bg-revealed",
+                    isPlayer && "ring-2 ring-primary ring-inset bg-primary/20",
+                    canMoveTo && "ring-1 ring-primary/50 cursor-pointer hover:bg-primary/10 active:scale-95",
+                    !canMoveTo && !isPlayer && "cursor-default"
                   )}
+                  onClick={() => canMoveTo && handleTileClick(x, y)}
+                  disabled={!canMoveTo}
                   initial={isRevealed ? { opacity: 0, scale: 0.8 } : {}}
                   animate={isRevealed ? { opacity: 1, scale: 1 } : {}}
                   transition={{ duration: 0.2 }}
+                  whileTap={canMoveTo ? { scale: 0.9 } : {}}
                 >
                   {isRevealed && pile && (
                     <div 
@@ -93,15 +117,15 @@ export function JunkyardScreen({
                       )}
                     >
                       {!pile.isDepleted && (
-                        <span className="text-lg">📦</span>
+                        <span className="text-base sm:text-lg">📦</span>
                       )}
                       {pile.isDepleted && (
-                        <span className="text-lg opacity-30">📦</span>
+                        <span className="text-base sm:text-lg opacity-30">📦</span>
                       )}
                     </div>
                   )}
-                  {isRevealed && droppedItem && (
-                    <span className="text-sm">{droppedItem.item.icon}</span>
+                  {isRevealed && droppedItem && !pile && (
+                    <span className="text-xs sm:text-sm">{droppedItem.item.icon}</span>
                   )}
                   {isPlayer && (
                     <motion.div
@@ -109,10 +133,14 @@ export function JunkyardScreen({
                       animate={{ scale: [1, 1.1, 1] }}
                       transition={{ repeat: Infinity, duration: 2 }}
                     >
-                      <span className="text-xl">🤖</span>
+                      <span className="text-lg sm:text-xl">🤖</span>
                     </motion.div>
                   )}
-                </motion.div>
+                  {/* Adjacent indicator arrow */}
+                  {canMoveTo && !pile && (
+                    <span className="text-primary/60 text-xs">•</span>
+                  )}
+                </motion.button>
               );
             })
           )}
@@ -141,75 +169,34 @@ export function JunkyardScreen({
         )}
       </main>
 
-      {/* Controls */}
+      {/* Action Buttons - Simplified */}
       <footer className="industrial-panel p-4 pb-safe">
-        <div className="flex items-center justify-between gap-4">
-          {/* D-Pad */}
-          <div className="grid grid-cols-3 gap-1">
-            <div />
-            <Button 
-              variant="steel" 
-              size="icon" 
-              onClick={() => onMove(0, -1)}
-              className="h-12 w-12"
+        <div className="flex gap-3">
+          {currentPile && !currentPile.isDepleted ? (
+            <Button
+              variant="action"
+              size="xl"
+              className="flex-1"
+              onClick={onSearch}
             >
-              <ChevronUp className="w-6 h-6" />
+              <Search className="w-5 h-5" />
+              Search ({currentPile.progressTurns}/5)
             </Button>
-            <div />
-            <Button 
-              variant="steel" 
-              size="icon" 
-              onClick={() => onMove(-1, 0)}
-              className="h-12 w-12"
+          ) : (
+            <Button
+              variant="nav"
+              size="xl"
+              className="flex-1"
+              onClick={onReturnToBase}
             >
-              <ChevronLeft className="w-6 h-6" />
+              <Home className="w-5 h-5" />
+              Return to Base
             </Button>
-            <div className="h-12 w-12 rounded-md bg-muted/50" />
-            <Button 
-              variant="steel" 
-              size="icon" 
-              onClick={() => onMove(1, 0)}
-              className="h-12 w-12"
-            >
-              <ChevronRight className="w-6 h-6" />
-            </Button>
-            <div />
-            <Button 
-              variant="steel" 
-              size="icon" 
-              onClick={() => onMove(0, 1)}
-              className="h-12 w-12"
-            >
-              <ChevronDown className="w-6 h-6" />
-            </Button>
-            <div />
-          </div>
-
-          {/* Action Button */}
-          <div className="flex-1">
-            {currentPile && !currentPile.isDepleted ? (
-              <Button
-                variant="action"
-                size="xl"
-                className="w-full"
-                onClick={onSearch}
-              >
-                <Search className="w-5 h-5" />
-                Search ({currentPile.progressTurns}/5)
-              </Button>
-            ) : (
-              <Button
-                variant="nav"
-                size="xl"
-                className="w-full"
-                onClick={onReturnToBase}
-              >
-                <Home className="w-5 h-5" />
-                Return to Base
-              </Button>
-            )}
-          </div>
+          )}
         </div>
+        <p className="text-xs text-muted-foreground text-center mt-2">
+          Tap adjacent tiles to move
+        </p>
       </footer>
     </div>
   );
