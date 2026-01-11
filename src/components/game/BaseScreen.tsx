@@ -15,6 +15,7 @@ interface BaseScreenProps {
   onOpenSell: () => void;
   onOpenUpgrades: () => void;
   onOpenWorkshop: () => void;
+  onOpenStash: () => void;
   onMoveToNextJunkyard: () => void;
   onTransferToStash: () => void;
   onRecharge: () => void;
@@ -31,6 +32,7 @@ export function BaseScreen({
   onOpenSell,
   onOpenUpgrades,
   onOpenWorkshop,
+  onOpenStash,
   onMoveToNextJunkyard,
   onTransferToStash,
   onRecharge,
@@ -85,10 +87,11 @@ export function BaseScreen({
           </motion.div>
 
           <motion.div 
-            className="industrial-panel p-3 rounded-lg"
+            className="industrial-panel p-3 rounded-lg cursor-pointer hover:bg-muted/50 transition-colors"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}
+            onClick={onOpenStash}
           >
             <div className="flex items-center gap-2 mb-1">
               <ShoppingBag className="w-4 h-4 text-primary" />
