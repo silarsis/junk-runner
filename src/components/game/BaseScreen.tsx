@@ -4,6 +4,8 @@ import { Button } from '@/components/ui/button';
 import { GameState, Bag, BASIC_BATTERY_CAPACITY } from '@/types/game';
 import { UPGRADES } from '@/data/upgradeData';
 import { cn } from '@/lib/utils';
+import { JunkyardPreview } from './JunkyardPreview';
+import { getJunkyardTypeFromSeed } from '@/data/junkyardTypes';
 
 interface BaseScreenProps {
   gameState: GameState;
@@ -226,6 +228,12 @@ export function BaseScreen({
             </Button>
           </motion.div>
         )}
+
+        {/* Junkyard Preview */}
+        <JunkyardPreview 
+          junkyardType={getJunkyardTypeFromSeed(gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now())}
+          seed={gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now()}
+        />
 
         {/* Main Action - Enter Junkyard */}
         <motion.div
