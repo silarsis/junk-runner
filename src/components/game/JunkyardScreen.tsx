@@ -1,9 +1,11 @@
 import { motion } from 'framer-motion';
 import { Search, Home, Package, Battery, BatteryWarning } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState, JunkPile, Bag } from '@/types/game';
+import { GameState, JunkPile, Bag, HelperRobot } from '@/types/game';
 import { isTilePassable, getWallAt } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
+
+type MovementType = 'basic' | 'diagonal' | 'jump';
 
 interface JunkyardScreenProps {
   gameState: GameState;
@@ -14,6 +16,71 @@ interface JunkyardScreenProps {
   onSearch: () => void;
   onReturnToBase: () => void;
   onOpenInventory: () => void;
+}
+
+// Get movement type from primary helper
+function getMovementType(helpers: HelperRobot[]): MovementType {
+  const primary = helpers.find(h => h.isPrimary);
+  if (primary?.components.mobility?.movementType) {
+    return primary.components.mobility.movementType;
+  }
+  return 'basic';
+}
+
+// Check if a move is valid for the given movement type
+function isValidMove(dx: number, dy: number, movementType: MovementType, junkyard: GameState['junkyard'], fromX: number, fromY: number): boolean {
+  const absDx = Math.abs(dx);
+  const absDy = Math.abs(dy);
+  
+  switch (movementType) {
+    case 'basic':
+      // Only orthogonal (up/down/left/right), 1 tile
+      return (absDx + absDy === 1) && (absDx <= 1 && absDy <= 1);
+    
+    case 'diagonal':
+      // Orthogonal OR diagonal, 1 tile
+      return (absDx <= 1 && absDy <= 1) && (absDx + absDy >= 1);
+    
+    case 'jump':
+      // Can move up to 2 tiles in any direction (including jumping over obstacles)
+      return (absDx <= 2 && absDy <= 2) && (absDx + absDy >= 1);
+    
+    default:
+      return false;
+  }
+}
+
+// Get all valid move targets for visualization
+function getValidMoveTargets(
+  playerX: number, 
+  playerY: number, 
+  movementType: MovementType, 
+  junkyard: GameState['junkyard']
+): Set<string> {
+  const validTargets = new Set<string>();
+  if (!junkyard) return validTargets;
+  
+  const range = movementType === 'jump' ? 2 : 1;
+  
+  for (let dy = -range; dy <= range; dy++) {
+    for (let dx = -range; dx <= range; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      
+      const targetX = playerX + dx;
+      const targetY = playerY + dy;
+      
+      // Check if the move pattern is valid for this movement type
+      if (!isValidMove(dx, dy, movementType, junkyard, playerX, playerY)) continue;
+      
+      // For jump, destination just needs to be passable (can jump over walls)
+      // For others, destination must be passable
+      if (isTilePassable(junkyard, targetX, targetY)) {
+        validTargets.add(`${targetX}-${targetY}`);
+      }
+    }
+  }
+  
+  return validTargets;
 }
 
 export function JunkyardScreen({
@@ -40,22 +107,31 @@ export function JunkyardScreen({
     return 'bg-pile-active';
   };
 
+  const movementType = getMovementType(player.helpers);
+  const validMoveTargets = getValidMoveTargets(player.playerX, player.playerY, movementType, junkyard);
+
   const handleTileClick = (x: number, y: number) => {
     if (isBatteryEmpty) return;
     
     const dx = x - player.playerX;
     const dy = y - player.playerY;
     
-    // Only allow moving to adjacent tiles (orthogonal movement)
-    if (Math.abs(dx) + Math.abs(dy) === 1) {
+    // Check if this is a valid move for our movement type
+    if (isValidMove(dx, dy, movementType, junkyard, player.playerX, player.playerY)) {
+      // For non-jump movement, verify path is clear
+      if (movementType !== 'jump' && !isTilePassable(junkyard, x, y)) {
+        return;
+      }
+      // For jump, just verify destination is passable
+      if (movementType === 'jump' && !isTilePassable(junkyard, x, y)) {
+        return;
+      }
       onMove(dx, dy);
     }
   };
 
-  const isAdjacentToPlayer = (x: number, y: number) => {
-    const dx = Math.abs(x - player.playerX);
-    const dy = Math.abs(y - player.playerY);
-    return dx + dy === 1;
+  const isValidTarget = (x: number, y: number) => {
+    return validMoveTargets.has(`${x}-${y}`);
   };
 
   return (
@@ -138,9 +214,9 @@ export function JunkyardScreen({
               const pile = junkyard.piles.find(p => p.x === x && p.y === y);
               const wall = getWallAt(junkyard, x, y);
               const droppedItem = junkyard.droppedItems.find(d => d.x === x && d.y === y);
-              const isAdjacent = isAdjacentToPlayer(x, y);
+              const isTarget = isValidTarget(x, y);
               const isPassable = isTilePassable(junkyard, x, y);
-              const canMoveTo = isRevealed && isAdjacent && !isPlayer && isPassable && !isBatteryEmpty;
+              const canMoveTo = isRevealed && isTarget && !isPlayer && isPassable && !isBatteryEmpty;
 
               return (
                 <motion.button
@@ -154,7 +230,7 @@ export function JunkyardScreen({
                     isPlayer && "ring-2 ring-primary ring-inset bg-primary/20",
                     canMoveTo && "ring-1 ring-primary/50 cursor-pointer hover:bg-primary/10 active:scale-95",
                     !canMoveTo && !isPlayer && "cursor-default",
-                    isBatteryEmpty && isAdjacent && "opacity-50"
+                    isBatteryEmpty && isTarget && "opacity-50"
                   )}
                   onClick={() => canMoveTo && handleTileClick(x, y)}
                   disabled={!canMoveTo}
@@ -260,7 +336,10 @@ export function JunkyardScreen({
           )}
         </div>
         <p className="text-xs text-muted-foreground text-center mt-2">
-          Tap adjacent tiles to move • Each action uses 1 battery
+          {movementType === 'basic' && 'Tap adjacent tiles to move (↑↓←→)'}
+          {movementType === 'diagonal' && 'Move in any direction including diagonals'}
+          {movementType === 'jump' && 'Jump up to 2 tiles in any direction'}
+          {' • Each action uses 1 battery'}
         </p>
       </footer>
     </div>

@@ -319,13 +319,41 @@ export function useGameState() {
       const newX = prev.player.playerX + dx;
       const newY = prev.player.playerY + dy;
       
-      // Check bounds and walls
-      if (!isTilePassable(prev.junkyard, newX, newY)) {
+      // Check battery
+      if (prev.player.currentCharge <= 0) {
         return prev;
       }
       
-      // Check battery
-      if (prev.player.currentCharge <= 0) {
+      // Get movement type from primary helper
+      const primary = getPrimaryHelper(prev.player);
+      const movementType = primary?.components.mobility?.movementType || 'basic';
+      
+      const absDx = Math.abs(dx);
+      const absDy = Math.abs(dy);
+      
+      // Validate move based on movement type
+      let isValidMove = false;
+      switch (movementType) {
+        case 'basic':
+          // Only orthogonal (up/down/left/right), 1 tile
+          isValidMove = (absDx + absDy === 1) && (absDx <= 1 && absDy <= 1);
+          break;
+        case 'diagonal':
+          // Orthogonal OR diagonal, 1 tile
+          isValidMove = (absDx <= 1 && absDy <= 1) && (absDx + absDy >= 1);
+          break;
+        case 'jump':
+          // Can move up to 2 tiles in any direction (can jump over obstacles)
+          isValidMove = (absDx <= 2 && absDy <= 2) && (absDx + absDy >= 1);
+          break;
+      }
+      
+      if (!isValidMove) {
+        return prev;
+      }
+      
+      // Check destination is passable (jump can skip intermediate tiles)
+      if (!isTilePassable(prev.junkyard, newX, newY)) {
         return prev;
       }
       
