@@ -27,8 +27,8 @@ function createInitialPlayerState(): PlayerState {
   return {
     currency: 50,
     bag: {
-      width: 6,
-      height: 8,
+      width: 4,
+      height: 4,
       maxWeight: 30,
       items: [],
     },
