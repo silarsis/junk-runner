@@ -338,6 +338,10 @@ export function useGameState() {
           // Only orthogonal (up/down/left/right), 1 tile
           isValidMove = (absDx + absDy === 1) && (absDx <= 1 && absDy <= 1);
           break;
+        case 'extended':
+          // Only orthogonal (up/down/left/right), up to 2 tiles
+          isValidMove = ((absDx === 0 && absDy >= 1 && absDy <= 2) || (absDy === 0 && absDx >= 1 && absDx <= 2));
+          break;
         case 'diagonal':
           // Orthogonal OR diagonal, 1 tile
           isValidMove = (absDx <= 1 && absDy <= 1) && (absDx + absDy >= 1);
