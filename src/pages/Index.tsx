@@ -30,6 +30,8 @@ const Index = () => {
     equipBattery,
     purchaseBattery,
     getMaxBattery,
+    installModule,
+    removeModule,
   } = useGameState();
 
   const [currentScreen, setCurrentScreen] = useState<Screen>('base');
@@ -136,7 +138,12 @@ const Index = () => {
             helpers={gameState.player.helpers}
             controlCapacity={controlCapacity}
             currency={gameState.player.currency}
+            stash={gameState.player.stash}
+            battery={gameState.player.battery}
             onClose={() => setCurrentScreen('base')}
+            onEquipBattery={equipBattery}
+            onInstallModule={installModule}
+            onRemoveModule={removeModule}
           />
         )}
 
