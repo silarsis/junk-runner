@@ -132,6 +132,7 @@ function generateLoot(seed: number): Item[] {
       storageHeight: template.storageHeight,
       storageMaxWeight: template.storageMaxWeight,
       movementType: template.movementType,
+      solarRegenRate: template.solarRegenRate,
     });
   }
   
@@ -165,6 +166,22 @@ function getMaxBatteryCapacity(helper: HelperRobot): number {
     return battery.batteryCapacity;
   }
   return BASIC_BATTERY_CAPACITY;
+}
+
+// Get solar regen rate from helper modules (lowest = best)
+function getSolarRegenRate(helper: HelperRobot): number | null {
+  const solarModules = helper.components.modules.filter(m => m?.solarRegenRate);
+  if (solarModules.length === 0) return null;
+  // Return the best (lowest) regen rate
+  return Math.min(...solarModules.map(m => m.solarRegenRate!));
+}
+
+// Calculate solar charge regen for a turn
+function calculateSolarRegen(turnCount: number, regenRate: number, maxCharge: number, currentCharge: number): number {
+  if (turnCount % regenRate === 0) {
+    return Math.min(1, maxCharge - currentCharge);
+  }
+  return 0;
 }
 
 // Get primary helper
@@ -462,6 +479,19 @@ export function useGameState() {
         }
       }
       
+      const newTurnCount = prev.turnCount + 1;
+      let newCharge = prev.player.currentCharge - batteryCost;
+      
+      // Solar panel regeneration
+      if (primary) {
+        const solarRate = getSolarRegenRate(primary);
+        if (solarRate !== null) {
+          const maxCapacity = getMaxBatteryCapacity(primary);
+          const regenAmount = calculateSolarRegen(newTurnCount, solarRate, maxCapacity, newCharge);
+          newCharge = Math.min(maxCapacity, newCharge + regenAmount);
+        }
+      }
+      
       return {
         ...prev,
         junkyard: updatedJunkyard,
@@ -469,9 +499,9 @@ export function useGameState() {
           ...prev.player, 
           playerX: finalX, 
           playerY: finalY,
-          currentCharge: prev.player.currentCharge - batteryCost,
+          currentCharge: newCharge,
         },
-        turnCount: prev.turnCount + 1,
+        turnCount: newTurnCount,
       };
     });
   }, [bagItems]);
@@ -540,25 +570,53 @@ export function useGameState() {
         
         setBagItems(newBagItems);
         
+        const newTurnCount = prev.turnCount + 1;
+        let newCharge = prev.player.currentCharge - 1;
+        
+        // Solar panel regeneration
+        if (primary) {
+          const solarRate = getSolarRegenRate(primary);
+          if (solarRate !== null) {
+            const maxCapacity = getMaxBatteryCapacity(primary);
+            const regenAmount = calculateSolarRegen(newTurnCount, solarRate, maxCapacity, newCharge);
+            newCharge = Math.min(maxCapacity, newCharge + regenAmount);
+          }
+        }
+        
         return {
           ...prev,
           junkyard: { ...prev.junkyard, piles: updatedPiles },
           player: { 
             ...prev.player, 
-            currentCharge: prev.player.currentCharge - 1,
+            currentCharge: newCharge,
           },
-          turnCount: prev.turnCount + 1,
+          turnCount: newTurnCount,
         };
       } else {
         updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress };
+        
+        const newTurnCount = prev.turnCount + 1;
+        const primary = getPrimaryHelper(prev.player);
+        let newCharge = prev.player.currentCharge - 1;
+        
+        // Solar panel regeneration
+        if (primary) {
+          const solarRate = getSolarRegenRate(primary);
+          if (solarRate !== null) {
+            const maxCapacity = getMaxBatteryCapacity(primary);
+            const regenAmount = calculateSolarRegen(newTurnCount, solarRate, maxCapacity, newCharge);
+            newCharge = Math.min(maxCapacity, newCharge + regenAmount);
+          }
+        }
+        
         return {
           ...prev,
           junkyard: { ...prev.junkyard, piles: updatedPiles },
           player: { 
             ...prev.player, 
-            currentCharge: prev.player.currentCharge - 1,
+            currentCharge: newCharge,
           },
-          turnCount: prev.turnCount + 1,
+          turnCount: newTurnCount,
         };
       }
     });

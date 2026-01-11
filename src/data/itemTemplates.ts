@@ -15,6 +15,7 @@ interface ItemTemplate {
   storageHeight?: number;
   storageMaxWeight?: number;
   movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
+  solarRegenRate?: number; // Turns per 1 charge regen (lower = better)
 }
 
 export const ITEM_TEMPLATES: ItemTemplate[] = [
@@ -54,6 +55,12 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   // General Modules
   { name: 'Scanner Array', category: 'module', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 150, icon: '📡' },
   { name: 'Cleaning Assist', category: 'module', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 120, icon: '🧹' },
+  
+  // Solar Panels - passive battery regen in junkyard
+  { name: 'Salvaged Solar Panel', category: 'module', rarity: 'uncommon', sizeW: 2, sizeH: 1, weight: 2, baseValue: 100, icon: '☀️', solarRegenRate: 5 },
+  { name: 'Efficient Solar Array', category: 'module', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 3, baseValue: 200, icon: '🌤️', solarRegenRate: 4 },
+  { name: 'Advanced Solar Grid', category: 'module', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 2, baseValue: 350, icon: '🌞', solarRegenRate: 3 },
+  { name: 'Quantum Solar Core', category: 'module', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 1, baseValue: 600, icon: '✨', solarRegenRate: 2 },
   
   // Junk
   { name: 'Crushed Can', category: 'junk', rarity: 'common', sizeW: 1, sizeH: 1, weight: 1, baseValue: 2, icon: '🥫' },
