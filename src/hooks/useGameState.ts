@@ -28,6 +28,7 @@ import {
 } from '@/data/itemTemplates';
 import { generateJunkyard, isTilePassable, getTerrainAt } from '@/lib/terrainGenerator';
 import { HELPER_FRAMES, UPGRADES } from '@/data/upgradeData';
+import { CraftingRecipe, hasIngredients } from '@/data/craftingRecipes';
 
 const STORAGE_KEY = 'junkrunner_save';
 const SEARCH_TURNS_REQUIRED = 5;
@@ -1171,6 +1172,122 @@ export function useGameState() {
     });
   }, []);
 
+  // Consume ingredients from stash
+  const consumeIngredients = (stash: Item[], ingredients: { name: string; quantity: number }[]): Item[] => {
+    const newStash = [...stash];
+    for (const ing of ingredients) {
+      let remaining = ing.quantity;
+      for (let i = newStash.length - 1; i >= 0 && remaining > 0; i--) {
+        if (newStash[i].name === ing.name) {
+          newStash.splice(i, 1);
+          remaining--;
+        }
+      }
+    }
+    return newStash;
+  };
+
+  const craftItem = useCallback((recipe: CraftingRecipe) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      // Check currency
+      if (prev.player.currency < recipe.currencyCost) return prev;
+      
+      // Check ingredients
+      if (!hasIngredients(prev.player.stash, recipe.ingredients)) return prev;
+      
+      // Create the crafted item
+      const craftedItem: Item = {
+        id: uuidv4(),
+        name: recipe.name,
+        category: recipe.category as any,
+        rarity: 'uncommon' as Rarity,
+        condition: 100,
+        isDirty: false,
+        sizeW: 2,
+        sizeH: 2,
+        weight: 3,
+        baseValue: recipe.currencyCost,
+        hiddenModifiers: [],
+        revealedModifiers: [],
+        icon: recipe.icon,
+        batteryCapacity: recipe.output?.batteryCapacity,
+        storageWidth: recipe.output?.storageWidth,
+        storageHeight: recipe.output?.storageHeight,
+        storageMaxWeight: recipe.output?.storageMaxWeight,
+        movementType: recipe.output?.movementType,
+        solarRegenRate: recipe.output?.solarRegenRate,
+      };
+      
+      // Consume ingredients
+      const newStash = consumeIngredients(prev.player.stash, recipe.ingredients);
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          currency: prev.player.currency - recipe.currencyCost,
+          stash: [...newStash, craftedItem],
+        },
+      };
+    });
+  }, []);
+
+  const buildFrame = useCallback((frameType: string) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const frameInfo = HELPER_FRAMES[frameType as keyof typeof HELPER_FRAMES];
+      if (!frameInfo) return prev;
+      
+      // Find the recipe for this frame
+      const recipe = {
+        basic: { cost: 50, ingredients: [{ name: 'Steel Plate', quantity: 2 }, { name: 'Broken Gear', quantity: 3 }, { name: 'Copper Wire', quantity: 2 }] },
+        crawler: { cost: 200, ingredients: [{ name: 'Steel Plate', quantity: 4 }, { name: 'Motor Unit', quantity: 1 }, { name: 'Broken Gear', quantity: 4 }, { name: 'Copper Wire', quantity: 3 }] },
+        scout: { cost: 300, ingredients: [{ name: 'Titanium Scrap', quantity: 2 }, { name: 'Circuit Board', quantity: 2 }, { name: 'Power Cell', quantity: 1 }, { name: 'Copper Wire', quantity: 4 }] },
+      }[frameType];
+      
+      if (!recipe) return prev;
+      
+      // Check currency
+      if (prev.player.currency < recipe.cost) return prev;
+      
+      // Check ingredients
+      if (!hasIngredients(prev.player.stash, recipe.ingredients)) return prev;
+      
+      // Check capacity
+      const controlCapacity = 1 + prev.player.baseUpgrades.controlCapacity;
+      if (prev.player.helpers.length >= controlCapacity) return prev;
+      
+      // Create the new helper
+      const newHelper: HelperRobot = {
+        id: uuidv4(),
+        frameId: frameType as any,
+        components: {
+          mobility: createBasicMobility(),
+          modules: [createBasicStorage()],
+          battery: createBasicBattery(),
+        },
+        isDeployed: false,
+        isPrimary: false,
+      };
+      
+      // Consume ingredients
+      const newStash = consumeIngredients(prev.player.stash, recipe.ingredients);
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          currency: prev.player.currency - recipe.cost,
+          stash: newStash,
+          helpers: [...prev.player.helpers, newHelper],
+        },
+      };
+    });
+  }, []);
+
   // Computed values
   const getMaxBattery = useCallback(() => {
     if (!gameState) return BASIC_BATTERY_CAPACITY;
@@ -1198,6 +1315,8 @@ export function useGameState() {
     installComponent,
     removeComponent,
     purchaseBattery,
+    craftItem,
+    buildFrame,
     getMaxBattery,
     resetGame,
   };
