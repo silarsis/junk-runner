@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { AnimatePresence } from 'framer-motion';
 import { useGameState } from '@/hooks/useGameState';
 import { BaseScreen } from '@/components/game/BaseScreen';
@@ -9,6 +9,8 @@ import { SellScreen } from '@/components/game/SellScreen';
 import { UpgradesScreen } from '@/components/game/UpgradesScreen';
 import { WorkshopScreen } from '@/components/game/WorkshopScreen';
 import { StashModal } from '@/components/game/StashModal';
+import { FoundItemsAlert } from '@/components/game/FoundItemsAlert';
+import { showTerrainToast } from '@/components/game/TerrainToast';
 
 type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop';
 
@@ -17,6 +19,10 @@ const Index = () => {
     gameState,
     isLoading,
     bagItems,
+    foundItems,
+    setFoundItems,
+    lastTerrainType,
+    setLastTerrainType,
     getCurrentBag,
     enterJunkyard,
     movePlayer,
@@ -37,6 +43,14 @@ const Index = () => {
     getMaxBattery,
     resetGame,
   } = useGameState();
+
+  // Show terrain toast when stepping on terrain
+  useEffect(() => {
+    if (lastTerrainType) {
+      showTerrainToast(lastTerrainType.type);
+      setLastTerrainType(null);
+    }
+  }, [lastTerrainType, setLastTerrainType]);
 
   const [currentScreen, setCurrentScreen] = useState<Screen>('base');
   const [showInventory, setShowInventory] = useState(false);
@@ -191,6 +205,13 @@ const Index = () => {
           />
         )}
       </AnimatePresence>
+
+      {/* Found Items Alert */}
+      <FoundItemsAlert
+        items={foundItems}
+        open={foundItems.length > 0}
+        onClose={() => setFoundItems([])}
+      />
     </div>
   );
 };

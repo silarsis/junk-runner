@@ -321,13 +321,13 @@ export function JunkyardScreen({
           >
             <div className="flex justify-between text-sm mb-2">
               <span className="text-muted-foreground">Search Progress</span>
-              <span className="font-mono">{currentPile.progressTurns}/5</span>
+              <span className="font-mono">{currentPile.progressTurns}/{currentPile.requiredTurns}</span>
             </div>
             <div className="h-3 bg-muted rounded-full overflow-hidden">
               <motion.div
                 className="h-full bg-primary"
                 initial={{ width: 0 }}
-                animate={{ width: `${(currentPile.progressTurns / 5) * 100}%` }}
+                animate={{ width: `${(currentPile.progressTurns / currentPile.requiredTurns) * 100}%` }}
                 transition={{ duration: 0.3 }}
               />
             </div>
@@ -346,7 +346,7 @@ export function JunkyardScreen({
               onClick={onSearch}
             >
               <Search className="w-5 h-5" />
-              Search ({currentPile.progressTurns}/5)
+              Search ({currentPile.progressTurns}/{currentPile.requiredTurns})
             </Button>
           ) : (
             <Button

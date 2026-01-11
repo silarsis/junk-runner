@@ -46,6 +46,7 @@ export interface JunkPile {
   x: number;
   y: number;
   progressTurns: number;
+  requiredTurns: number; // Random 1-5 turns to scavenge
   isDepleted: boolean;
 }
 
