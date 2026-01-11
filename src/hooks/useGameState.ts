@@ -883,6 +883,15 @@ export function useGameState() {
     });
   }, []);
 
+  const calculateItemValue = (item: Item): number => {
+    const rarityMult: Record<Rarity, number> = {
+      common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
+    };
+    const conditionMult = item.condition / 100;
+    const dirtyMult = item.isDirty ? 0.3 : 1;
+    return Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult);
+  };
+
   const sellItem = useCallback((itemId: string) => {
     setGameState(prev => {
       if (!prev) return prev;
@@ -890,13 +899,7 @@ export function useGameState() {
       const item = prev.player.stash.find(i => i.id === itemId);
       if (!item) return prev;
       
-      const rarityMult: Record<Rarity, number> = {
-        common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
-      };
-      const conditionMult = item.condition / 100;
-      const dirtyMult = item.isDirty ? 0.3 : 1;
-      
-      const value = Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult);
+      const value = calculateItemValue(item);
       
       return {
         ...prev,
@@ -904,6 +907,27 @@ export function useGameState() {
           ...prev.player,
           currency: prev.player.currency + value,
           stash: prev.player.stash.filter(i => i.id !== itemId),
+        },
+      };
+    });
+  }, []);
+
+  const sellMultipleItems = useCallback((itemIds: string[]) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const idsSet = new Set(itemIds);
+      const itemsToSell = prev.player.stash.filter(i => idsSet.has(i.id));
+      if (itemsToSell.length === 0) return prev;
+      
+      const totalValue = itemsToSell.reduce((sum, item) => sum + calculateItemValue(item), 0);
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          currency: prev.player.currency + totalValue,
+          stash: prev.player.stash.filter(i => !idsSet.has(i.id)),
         },
       };
     });
@@ -1168,6 +1192,7 @@ export function useGameState() {
     startCleaning,
     collectCleanedItem,
     sellItem,
+    sellMultipleItems,
     transferToStash,
     purchaseUpgrade,
     installComponent,
