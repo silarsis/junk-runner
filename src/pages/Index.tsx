@@ -8,6 +8,7 @@ import { CleaningScreen } from '@/components/game/CleaningScreen';
 import { SellScreen } from '@/components/game/SellScreen';
 import { UpgradesScreen } from '@/components/game/UpgradesScreen';
 import { WorkshopScreen } from '@/components/game/WorkshopScreen';
+import { StashModal } from '@/components/game/StashModal';
 
 type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop';
 
@@ -36,6 +37,7 @@ const Index = () => {
 
   const [currentScreen, setCurrentScreen] = useState<Screen>('base');
   const [showInventory, setShowInventory] = useState(false);
+  const [showStash, setShowStash] = useState(false);
 
   if (isLoading || !gameState) {
     return (
@@ -95,6 +97,7 @@ const Index = () => {
             onOpenSell={() => setCurrentScreen('sell')}
             onOpenUpgrades={() => setCurrentScreen('upgrades')}
             onOpenWorkshop={() => setCurrentScreen('workshop')}
+            onOpenStash={() => setShowStash(true)}
             onMoveToNextJunkyard={handleMoveToNextJunkyard}
             onTransferToStash={transferToStash}
             onRecharge={handleRecharge}
@@ -168,6 +171,17 @@ const Index = () => {
             bag={currentBag}
             isOpen={showInventory}
             onClose={() => setShowInventory(false)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Stash Modal */}
+      <AnimatePresence>
+        {showStash && (
+          <StashModal
+            stash={gameState.player.stash}
+            isOpen={showStash}
+            onClose={() => setShowStash(false)}
           />
         )}
       </AnimatePresence>
