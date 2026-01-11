@@ -250,6 +250,20 @@ export function useGameState() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        // Migration: ensure player exists
+        if (!parsed.player) {
+          parsed.player = createInitialPlayerState();
+        }
+        // Migration: ensure baseUpgrades exists
+        if (!parsed.player.baseUpgrades) {
+          parsed.player.baseUpgrades = {
+            cleaningSlots: 0,
+            cleaningSpeed: 0,
+            workshopTier: 0,
+            controlCapacity: 0,
+            chargerEfficiency: 0,
+          };
+        }
         // Migration: ensure primary helper exists
         if (!parsed.player.helpers || parsed.player.helpers.length === 0) {
           parsed.player.helpers = [createPrimaryHelper()];
@@ -268,8 +282,12 @@ export function useGameState() {
           parsed.junkyard.terrain = [];
         }
         // Migration: ensure chargerEfficiency exists
-        if (parsed.player.baseUpgrades && parsed.player.baseUpgrades.chargerEfficiency === undefined) {
+        if (parsed.player.baseUpgrades.chargerEfficiency === undefined) {
           parsed.player.baseUpgrades.chargerEfficiency = 0;
+        }
+        // Migration: ensure currency is a valid number
+        if (typeof parsed.player.currency !== 'number' || isNaN(parsed.player.currency)) {
+          parsed.player.currency = 50;
         }
         // Load bag items from storage
         if (parsed.bagItems) {
