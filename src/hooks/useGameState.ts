@@ -963,7 +963,6 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      const { UPGRADES } = require('@/data/upgradeData');
       const upgrade = UPGRADES[upgradeId];
       if (!upgrade) return prev;
       
