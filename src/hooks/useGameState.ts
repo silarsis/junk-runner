@@ -384,6 +384,10 @@ export function useGameState() {
         (parsed.bagItems as InventoryItem[]).forEach(normalizeItemArrays);
         setBagItems(parsed.bagItems);
 
+        // Migration: ensure junkyardSeed exists
+        if (typeof parsed.junkyardSeed !== 'number') {
+          parsed.junkyardSeed = parsed.junkyard?.seed ?? Date.now();
+        }
 
         setGameState(parsed);
       } catch (err) {
@@ -394,6 +398,7 @@ export function useGameState() {
         setGameState({
           player: createInitialPlayerState(),
           junkyard: null,
+          junkyardSeed: Date.now(),
           turnCount: 0,
         });
       }
@@ -401,6 +406,7 @@ export function useGameState() {
       setGameState({
         player: createInitialPlayerState(),
         junkyard: null,
+        junkyardSeed: Date.now(),
         turnCount: 0,
       });
     }
@@ -437,7 +443,8 @@ export function useGameState() {
       let playerY = prev.player.playerY;
       
       if (!junkyard) {
-        const seed = Date.now();
+        // Use the stored seed for the junkyard
+        const seed = prev.junkyardSeed;
         junkyard = generateJunkyard(seed);
         playerX = 0;
         playerY = 0;
@@ -804,12 +811,13 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      const seed = Date.now();
-      const junkyard = generateJunkyard(seed);
+      // Generate a new seed for the next junkyard
+      const newSeed = Date.now();
       
       return {
         ...prev,
-        junkyard,
+        junkyard: null, // Clear current junkyard, will be generated on enter
+        junkyardSeed: newSeed,
         player: { ...prev.player, playerX: 0, playerY: 0, currentYardId: null },
       };
     });
@@ -1168,6 +1176,7 @@ export function useGameState() {
     setGameState({
       player: createInitialPlayerState(),
       junkyard: null,
+      junkyardSeed: Date.now(),
       turnCount: 0,
     });
   }, []);

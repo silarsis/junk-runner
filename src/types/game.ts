@@ -159,6 +159,7 @@ export interface PlayerState {
 export interface GameState {
   player: PlayerState;
   junkyard: Junkyard | null;
+  junkyardSeed: number; // Seed for the next/current junkyard (for preview)
   turnCount: number;
 }
 
