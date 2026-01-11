@@ -47,6 +47,15 @@ export const UPGRADES: Record<string, UpgradeInfo> = {
     getCost: (level) => 300 * Math.pow(2, level),
     getValue: (level) => 1 + level, // starts at 1, max 4
   },
+  chargerEfficiency: {
+    id: 'chargerEfficiency',
+    name: 'Charger Efficiency',
+    description: 'Reduce charging cost per unit',
+    icon: '🔌',
+    maxLevel: 5,
+    getCost: (level) => 100 * (level + 1),
+    getValue: (level) => 1 - (level * 0.15), // 1.0, 0.85, 0.70, 0.55, 0.40, 0.25
+  },
 };
 
 export interface HelperFrameInfo {

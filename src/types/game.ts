@@ -139,6 +139,7 @@ export interface BaseUpgrades {
   cleaningSpeed: number; // multiplier, 1.0 = base
   workshopTier: number;
   controlCapacity: number;
+  chargerEfficiency: number; // reduces cost per charge unit
 }
 
 export interface PlayerState {
