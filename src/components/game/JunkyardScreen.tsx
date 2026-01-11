@@ -2,18 +2,8 @@ import { motion } from 'framer-motion';
 import { Search, Home, Package, Battery, BatteryWarning } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameState, JunkPile, Bag, HelperRobot, TerrainType } from '@/types/game';
-import { isTilePassable, getWallAt, getTerrainAt } from '@/lib/terrainGenerator';
+import { isTilePassable, getWallAt, getTerrainAt, getBarrierAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
-
-// Terrain type styling
-const TERRAIN_STYLES: Record<TerrainType, { bg: string; border: string }> = {
-  mud: { bg: 'bg-amber-900/40', border: 'border-amber-700/50' },
-  toxic: { bg: 'bg-lime-500/30', border: 'border-lime-400/50' },
-  oil: { bg: 'bg-slate-800/60', border: 'border-slate-600/50' },
-  electric: { bg: 'bg-yellow-400/30', border: 'border-yellow-300/50' },
-  magnetic: { bg: 'bg-purple-500/30', border: 'border-purple-400/50' },
-  fog: { bg: 'bg-slate-400/40', border: 'border-slate-300/50' },
-};
 
 type MovementType = 'basic' | 'diagonal' | 'jump' | 'extended';
 
@@ -228,6 +218,7 @@ export function JunkyardScreen({
               const pile = junkyard.piles.find(p => p.x === x && p.y === y);
               const wall = getWallAt(junkyard, x, y);
               const terrain = getTerrainAt(junkyard, x, y);
+              const barrier = getBarrierAt(junkyard, x, y);
               const droppedItem = junkyard.droppedItems.find(d => d.x === x && d.y === y);
               const isTarget = isValidTarget(x, y);
               const isPassable = isTilePassable(junkyard, x, y);
@@ -238,7 +229,7 @@ export function JunkyardScreen({
               const canTraverseWall = mobilityName.includes('spider') && wall;
               const canMoveTo = isRevealed && isTarget && !isPlayer && (isPassable || canTraverseWall) && !isBatteryEmpty;
               
-              const terrainStyle = terrain ? TERRAIN_STYLES[terrain.type] : null;
+              const terrainStyle = terrain ? TERRAIN_DISPLAY[terrain.type] : null;
 
               return (
                 <motion.button
@@ -264,13 +255,18 @@ export function JunkyardScreen({
                   whileTap={canMoveTo ? { scale: 0.9 } : {}}
                 >
                   {/* Terrain hazard indicator */}
-                  {isRevealed && terrain && !wall && !pile && (
+                  {isRevealed && terrain && !wall && !pile && !barrier && (
                     <span className="absolute text-xs opacity-70">{terrain.icon}</span>
                   )}
                   
                   {/* Wall obstacle */}
                   {isRevealed && wall && (
                     <span className="text-base sm:text-lg opacity-60">{wall.icon}</span>
+                  )}
+                  
+                  {/* Barrier (soft gate) */}
+                  {isRevealed && barrier && !wall && (
+                    <span className="text-base sm:text-lg opacity-80">{barrier.icon}</span>
                   )}
                   
                   {/* Junk pile */}

@@ -62,31 +62,88 @@ export interface WallTile {
   icon: string;
 }
 
-// Terrain hazard types
+// Terrain hazard types - organized by biome
 export type TerrainType = 
+  // Legacy/Generic
   | 'mud'           // Costs 2 battery (treads ignore)
   | 'toxic'         // Damages item condition when crossed
   | 'oil'           // Slide 1 extra tile in movement direction
   | 'electric'      // Drains 3 battery (insulated ignores)
   | 'magnetic'      // Heavy items weigh 2x while inside
-  | 'fog';          // Reduces reveal radius to 1
+  | 'fog'           // Reduces reveal radius to 1
+  // Nuclear Exclusion Heap
+  | 'irradiated'    // Radiation accumulation over turns
+  | 'cooling_trench'// Costs 2 turns to cross
+  | 'cratered'      // Visual damage, normal movement
+  // Neon Slum Electronics Yard
+  | 'cable_sprawl'  // Movement penalties without cable-cutter
+  | 'broken_pavement' // Normal movement
+  | 'neon_pool'     // Electric interference
+  // Industrial Corpse Zone
+  | 'oil_slick'     // Chance to lose a turn
+  | 'assembly_line' // Linear movement guidance
+  | 'collapsed_catwalk' // Impassable gaps
+  // Black Market Bio-Waste Fields
+  | 'organic_sludge' // Infection/corrosion risk
+  | 'flesh_mound'   // Higher loot density
+  | 'drainage'      // Narrow walkways
+  // Cloudfall Data Graveyard
+  | 'cooling_fog'   // Reduced visibility
+  | 'server_rack'   // Narrow paths
+  | 'magnetic_floor'; // Affects metal-heavy helpers
+
+// Barrier types - soft gates requiring modules/abilities
+export type BarrierType =
+  // Nuclear
+  | 'sealed_door'
+  | 'collapsed_wall'
+  | 'radiation_curtain'
+  // Neon Slum
+  | 'data_cage'
+  | 'billboard_frame'
+  | 'power_junction'
+  // Industrial
+  | 'bulkhead_door'
+  | 'jammed_press'
+  | 'rubble'
+  // Biowaste
+  | 'quarantine_fence'
+  | 'medical_pod'
+  | 'living_wall'
+  // Cloudfall
+  | 'vault_door'
+  | 'server_stack'
+  | 'firewall_node';
 
 export interface TerrainTile {
   x: number;
   y: number;
   type: TerrainType;
   icon: string;
+  name?: string; // Display name for UI
+}
+
+export interface BarrierTile {
+  x: number;
+  y: number;
+  type: BarrierType;
+  icon: string;
+  name: string;
+  isPassable: boolean; // Can be unlocked with modules
+  requiresModule?: string;
 }
 
 export interface Junkyard {
   yardId: string;
   seed: number;
+  biomeId: string; // Which biome this junkyard uses
   width: number;
   height: number;
   revealedTiles: boolean[][];
   piles: JunkPile[];
   walls: WallTile[];
   terrain: TerrainTile[];
+  barriers: BarrierTile[]; // Soft gates
   droppedItems: DroppedItem[];
 }
 

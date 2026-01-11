@@ -1,9 +1,10 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Junkyard, JunkPile, WallTile, TerrainTile, TerrainType } from '@/types/game';
+import { Junkyard, JunkPile, WallTile, TerrainTile, TerrainType, BarrierTile } from '@/types/game';
 import { WALL_ICONS } from '@/data/itemTemplates';
+import { Biome, getBiomeFromSeed, pickBiomeTerrain, pickBiomeBarrier, pickBiomeWall } from '@/data/biomes';
 
-// Terrain type configurations
-export const TERRAIN_CONFIG: Record<TerrainType, { icon: string; weight: number }> = {
+// Legacy terrain config for fallback (when no biome)
+export const LEGACY_TERRAIN_CONFIG: Partial<Record<TerrainType, { icon: string; weight: number }>> = {
   mud: { icon: '🟤', weight: 25 },
   toxic: { icon: '☢️', weight: 15 },
   oil: { icon: '🛢️', weight: 20 },
@@ -12,15 +13,47 @@ export const TERRAIN_CONFIG: Record<TerrainType, { icon: string; weight: number 
   fog: { icon: '🌫️', weight: 15 },
 };
 
+// All terrain types with their display info
+export const TERRAIN_DISPLAY: Record<TerrainType, { icon: string; name: string; bg: string; border: string }> = {
+  // Legacy
+  mud: { icon: '🟤', name: 'Mud', bg: 'bg-amber-900/40', border: 'border-amber-700/50' },
+  toxic: { icon: '☢️', name: 'Toxic', bg: 'bg-lime-500/30', border: 'border-lime-400/50' },
+  oil: { icon: '🛢️', name: 'Oil', bg: 'bg-slate-800/60', border: 'border-slate-600/50' },
+  electric: { icon: '⚡', name: 'Electric', bg: 'bg-yellow-400/30', border: 'border-yellow-300/50' },
+  magnetic: { icon: '🧲', name: 'Magnetic', bg: 'bg-purple-500/30', border: 'border-purple-400/50' },
+  fog: { icon: '🌫️', name: 'Fog', bg: 'bg-slate-400/40', border: 'border-slate-300/50' },
+  // Nuclear
+  irradiated: { icon: '☢️', name: 'Irradiated', bg: 'bg-yellow-500/30', border: 'border-yellow-400/60' },
+  cooling_trench: { icon: '💧', name: 'Cooling Trench', bg: 'bg-cyan-600/30', border: 'border-cyan-400/50' },
+  cratered: { icon: '🕳️', name: 'Cratered', bg: 'bg-stone-700/40', border: 'border-stone-500/50' },
+  // Neon Slum
+  cable_sprawl: { icon: '〰️', name: 'Cable Sprawl', bg: 'bg-orange-600/30', border: 'border-orange-400/50' },
+  broken_pavement: { icon: '🔲', name: 'Broken Pavement', bg: 'bg-gray-600/30', border: 'border-gray-400/40' },
+  neon_pool: { icon: '💜', name: 'Neon Pool', bg: 'bg-fuchsia-500/40', border: 'border-fuchsia-400/60' },
+  // Industrial
+  oil_slick: { icon: '🛢️', name: 'Oil Slick', bg: 'bg-neutral-800/50', border: 'border-neutral-600/50' },
+  assembly_line: { icon: '⚙️', name: 'Assembly Line', bg: 'bg-zinc-600/30', border: 'border-zinc-400/40' },
+  collapsed_catwalk: { icon: '🌉', name: 'Collapsed Catwalk', bg: 'bg-red-900/30', border: 'border-red-700/50' },
+  // Biowaste
+  organic_sludge: { icon: '🟢', name: 'Organic Sludge', bg: 'bg-green-700/40', border: 'border-green-500/50' },
+  flesh_mound: { icon: '🫀', name: 'Flesh Mound', bg: 'bg-rose-800/40', border: 'border-rose-600/50' },
+  drainage: { icon: '🔳', name: 'Drainage', bg: 'bg-slate-500/30', border: 'border-slate-400/40' },
+  // Cloudfall
+  cooling_fog: { icon: '🌫️', name: 'Cooling Fog', bg: 'bg-blue-300/30', border: 'border-blue-200/40' },
+  server_rack: { icon: '🖲️', name: 'Server Rack', bg: 'bg-indigo-600/30', border: 'border-indigo-400/40' },
+  magnetic_floor: { icon: '🧲', name: 'Magnetic Floor', bg: 'bg-violet-600/30', border: 'border-violet-400/50' },
+};
+
 // Modular terrain generation configuration
 export interface TerrainConfig {
   width: number;
   height: number;
   pileCountMin: number;
   pileCountMax: number;
-  wallDensity: number; // 0-1, percentage of tiles that are walls
-  hazardDensity: number; // 0-1, percentage of tiles that are hazards
-  spawnClearRadius: number; // Keep area around spawn clear
+  wallDensity: number;
+  hazardDensity: number;
+  barrierDensity: number;
+  spawnClearRadius: number;
 }
 
 const DEFAULT_CONFIG: TerrainConfig = {
@@ -30,6 +63,7 @@ const DEFAULT_CONFIG: TerrainConfig = {
   pileCountMax: 25,
   wallDensity: 0.12,
   hazardDensity: 0.15,
+  barrierDensity: 0.05,
   spawnClearRadius: 2,
 };
 
@@ -46,11 +80,12 @@ function isInSpawnZone(x: number, y: number, config: TerrainConfig): boolean {
   return x <= config.spawnClearRadius && y <= config.spawnClearRadius;
 }
 
-// Generate wall positions
+// Generate wall positions using biome-specific walls
 function generateWalls(
   random: () => number, 
   config: TerrainConfig, 
-  usedPositions: Set<string>
+  usedPositions: Set<string>,
+  biome?: Biome
 ): WallTile[] {
   const walls: WallTile[] = [];
   const totalTiles = config.width * config.height;
@@ -71,11 +106,8 @@ function generateWalls(
     
     if (attempts < 50) {
       usedPositions.add(`${x},${y}`);
-      walls.push({
-        x,
-        y,
-        icon: WALL_ICONS[Math.floor(random() * WALL_ICONS.length)],
-      });
+      const icon = biome ? pickBiomeWall(biome, random) : WALL_ICONS[Math.floor(random() * WALL_ICONS.length)];
+      walls.push({ x, y, icon });
     }
   }
   
@@ -116,24 +148,12 @@ function generatePiles(
   return piles;
 }
 
-// Pick a random terrain type based on weights
-function pickTerrainType(random: () => number): TerrainType {
-  const types = Object.keys(TERRAIN_CONFIG) as TerrainType[];
-  const totalWeight = types.reduce((sum, t) => sum + TERRAIN_CONFIG[t].weight, 0);
-  let roll = random() * totalWeight;
-  
-  for (const type of types) {
-    roll -= TERRAIN_CONFIG[type].weight;
-    if (roll <= 0) return type;
-  }
-  return 'mud';
-}
-
-// Generate terrain hazards
+// Generate terrain hazards using biome-specific types
 function generateTerrain(
   random: () => number, 
   config: TerrainConfig, 
-  usedPositions: Set<string>
+  usedPositions: Set<string>,
+  biome?: Biome
 ): TerrainTile[] {
   const terrain: TerrainTile[] = [];
   const totalTiles = config.width * config.height;
@@ -154,22 +174,100 @@ function generateTerrain(
     
     if (attempts < 50) {
       // Don't add to usedPositions - terrain can coexist with piles
-      const type = pickTerrainType(random);
-      terrain.push({
-        x,
-        y,
-        type,
-        icon: TERRAIN_CONFIG[type].icon,
-      });
+      if (biome) {
+        const biomeTerrain = pickBiomeTerrain(biome, random);
+        if (biomeTerrain) {
+          terrain.push({
+            x,
+            y,
+            type: biomeTerrain.type,
+            icon: biomeTerrain.icon,
+            name: biomeTerrain.name,
+          });
+        }
+      } else {
+        // Legacy fallback
+        const legacyTypes = Object.keys(LEGACY_TERRAIN_CONFIG) as TerrainType[];
+        const totalWeight = legacyTypes.reduce((sum, t) => sum + (LEGACY_TERRAIN_CONFIG[t]?.weight || 0), 0);
+        let roll = random() * totalWeight;
+        
+        for (const type of legacyTypes) {
+          roll -= LEGACY_TERRAIN_CONFIG[type]?.weight || 0;
+          if (roll <= 0) {
+            terrain.push({
+              x,
+              y,
+              type,
+              icon: LEGACY_TERRAIN_CONFIG[type]?.icon || '❓',
+            });
+            break;
+          }
+        }
+      }
     }
   }
   
   return terrain;
 }
 
-// Main junkyard generation function
+// Generate barriers (soft gates)
+function generateBarriers(
+  random: () => number,
+  config: TerrainConfig,
+  usedPositions: Set<string>,
+  biome?: Biome
+): BarrierTile[] {
+  const barriers: BarrierTile[] = [];
+  if (!biome) return barriers;
+  
+  const totalTiles = config.width * config.height;
+  const barrierCount = Math.floor(totalTiles * config.barrierDensity);
+  
+  for (let i = 0; i < barrierCount; i++) {
+    let attempts = 0;
+    let x: number, y: number;
+    
+    do {
+      x = Math.floor(random() * config.width);
+      y = Math.floor(random() * config.height);
+      attempts++;
+    } while (
+      (usedPositions.has(`${x},${y}`) || isInSpawnZone(x, y, config)) && 
+      attempts < 50
+    );
+    
+    if (attempts < 50) {
+      usedPositions.add(`${x},${y}`);
+      const biomeBarrier = pickBiomeBarrier(biome, random);
+      if (biomeBarrier) {
+        barriers.push({
+          x,
+          y,
+          type: biomeBarrier.type,
+          icon: biomeBarrier.icon,
+          name: biomeBarrier.name,
+          isPassable: false,
+          requiresModule: biomeBarrier.requiresModule,
+        });
+      }
+    }
+  }
+  
+  return barriers;
+}
+
+// Main junkyard generation function with biome support
 export function generateJunkyard(seed: number, configOverrides?: Partial<TerrainConfig>): Junkyard {
-  const config = { ...DEFAULT_CONFIG, ...configOverrides };
+  const biome = getBiomeFromSeed(seed);
+  
+  // Apply biome-specific density overrides
+  const biomeConfig: Partial<TerrainConfig> = {
+    wallDensity: biome.wallDensity,
+    hazardDensity: biome.hazardDensity,
+    barrierDensity: biome.barrierDensity,
+  };
+  
+  const config = { ...DEFAULT_CONFIG, ...biomeConfig, ...configOverrides };
   const random = seededRandom(seed);
   
   // Initialize revealed tiles
@@ -182,29 +280,38 @@ export function generateJunkyard(seed: number, configOverrides?: Partial<Terrain
   usedPositions.add('0,0'); // Reserve spawn point
   
   // Generate terrain features in order
-  const walls = generateWalls(random, config, usedPositions);
-  const terrain = generateTerrain(random, config, usedPositions);
+  const walls = generateWalls(random, config, usedPositions, biome);
+  const barriers = generateBarriers(random, config, usedPositions, biome);
+  const terrain = generateTerrain(random, config, usedPositions, biome);
   const piles = generatePiles(random, config, usedPositions);
   
   return {
     yardId: uuidv4(),
     seed,
+    biomeId: biome.id,
     width: config.width,
     height: config.height,
     revealedTiles,
     piles,
     walls,
     terrain,
+    barriers,
     droppedItems: [],
   };
 }
 
-// Check if a tile is passable (not a wall)
+// Check if a tile is passable (not a wall or impassable barrier)
 export function isTilePassable(junkyard: Junkyard, x: number, y: number): boolean {
   if (x < 0 || x >= junkyard.width || y < 0 || y >= junkyard.height) {
     return false;
   }
-  return !junkyard.walls.some(w => w.x === x && w.y === y);
+  if (junkyard.walls.some(w => w.x === x && w.y === y)) {
+    return false;
+  }
+  if (junkyard.barriers.some(b => b.x === x && b.y === y && !b.isPassable)) {
+    return false;
+  }
+  return true;
 }
 
 // Get wall at position
@@ -215,4 +322,9 @@ export function getWallAt(junkyard: Junkyard, x: number, y: number): WallTile | 
 // Get terrain at position
 export function getTerrainAt(junkyard: Junkyard, x: number, y: number): TerrainTile | null {
   return junkyard.terrain.find(t => t.x === x && t.y === y) || null;
+}
+
+// Get barrier at position
+export function getBarrierAt(junkyard: Junkyard, x: number, y: number): BarrierTile | null {
+  return junkyard.barriers.find(b => b.x === x && b.y === y) || null;
 }
