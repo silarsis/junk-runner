@@ -5,7 +5,7 @@ import { GameState, Bag, BASIC_BATTERY_CAPACITY } from '@/types/game';
 import { UPGRADES } from '@/data/upgradeData';
 import { cn } from '@/lib/utils';
 import { JunkyardPreview } from './JunkyardPreview';
-import { getJunkyardTypeFromSeed } from '@/data/junkyardTypes';
+import { getBiomeFromSeed } from '@/data/biomes';
 
 interface BaseScreenProps {
   gameState: GameState;
@@ -231,7 +231,7 @@ export function BaseScreen({
 
         {/* Junkyard Preview */}
         <JunkyardPreview 
-          junkyardType={getJunkyardTypeFromSeed(gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now())}
+          biome={getBiomeFromSeed(gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now())}
           seed={gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now()}
         />
 

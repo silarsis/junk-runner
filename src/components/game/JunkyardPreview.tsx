@@ -1,11 +1,22 @@
 import { motion } from 'framer-motion';
-import { MapPin, Skull, Box } from 'lucide-react';
-import { JunkyardType, CATEGORY_DISPLAY } from '@/data/junkyardTypes';
+import { MapPin, Skull, Box, AlertTriangle } from 'lucide-react';
+import { Biome, BIOME_ITEMS } from '@/data/biomes';
 import { ItemCategory } from '@/types/game';
 import { cn } from '@/lib/utils';
 
+// Category display info
+const CATEGORY_DISPLAY: Record<ItemCategory, { name: string; icon: string }> = {
+  scrap: { name: 'Scrap', icon: '🔩' },
+  component: { name: 'Components', icon: '⚙️' },
+  battery: { name: 'Batteries', icon: '🔋' },
+  storage: { name: 'Storage', icon: '📦' },
+  mobility: { name: 'Mobility', icon: '🛞' },
+  module: { name: 'Modules', icon: '📡' },
+  junk: { name: 'Junk', icon: '🥫' },
+};
+
 interface JunkyardPreviewProps {
-  junkyardType: JunkyardType;
+  biome: Biome;
   seed: number;
 }
 
@@ -19,7 +30,6 @@ function LootBar({
   label: string; 
   icon: string;
 }) {
-  // Clamp weight display between 0-3 for visual
   const displayWeight = Math.min(weight, 3);
   const percentage = (displayWeight / 3) * 100;
   
@@ -58,27 +68,27 @@ function LootBar({
   );
 }
 
-export function JunkyardPreview({ junkyardType, seed }: JunkyardPreviewProps) {
+export function JunkyardPreview({ biome, seed }: JunkyardPreviewProps) {
   const categories: ItemCategory[] = ['scrap', 'component', 'battery', 'storage', 'mobility', 'module', 'junk'];
   
-  // Calculate effective weights
   const getEffectiveWeight = (category: ItemCategory) => {
-    return junkyardType.categoryWeights[category] ?? 1.0;
+    return biome.categoryWeights[category] ?? 1.0;
   };
   
-  // Sort categories by weight for better display
   const sortedCategories = [...categories].sort((a, b) => 
     getEffectiveWeight(b) - getEffectiveWeight(a)
   );
 
-  // Hazard level display
   const getHazardLevel = () => {
-    if (junkyardType.hazardDensity >= 0.25) return { label: 'Dangerous', color: 'text-destructive' };
-    if (junkyardType.hazardDensity >= 0.18) return { label: 'Moderate', color: 'text-accent' };
+    if (biome.hazardDensity >= 0.20) return { label: 'Dangerous', color: 'text-destructive' };
+    if (biome.hazardDensity >= 0.16) return { label: 'Moderate', color: 'text-accent' };
     return { label: 'Low', color: 'text-primary' };
   };
   
   const hazard = getHazardLevel();
+  
+  // Get biome-specific items for preview
+  const biomeItems = BIOME_ITEMS[biome.id] || [];
 
   return (
     <motion.div
@@ -88,15 +98,20 @@ export function JunkyardPreview({ junkyardType, seed }: JunkyardPreviewProps) {
     >
       {/* Header */}
       <div className="flex items-center gap-3 mb-3">
-        <span className="text-3xl">{junkyardType.icon}</span>
+        <span className="text-3xl">{biome.icon}</span>
         <div className="flex-1">
-          <h3 className="font-industrial text-foreground">{junkyardType.name}</h3>
-          <p className="text-xs text-muted-foreground">{junkyardType.description}</p>
+          <h3 className="font-industrial text-foreground">{biome.name}</h3>
+          <p className="text-xs text-muted-foreground">{biome.description}</p>
         </div>
       </div>
       
+      {/* Theme */}
+      <p className="text-xs italic text-muted-foreground mb-3 pl-1 border-l-2 border-primary/30">
+        {biome.theme}
+      </p>
+      
       {/* Quick Stats */}
-      <div className="flex items-center gap-4 mb-4 text-xs">
+      <div className="flex flex-wrap items-center gap-3 mb-4 text-xs">
         <div className="flex items-center gap-1">
           <MapPin className="w-3 h-3 text-muted-foreground" />
           <span className="text-muted-foreground">Sector</span>
@@ -110,7 +125,50 @@ export function JunkyardPreview({ junkyardType, seed }: JunkyardPreviewProps) {
         <div className="flex items-center gap-1">
           <Box className="w-3 h-3 text-muted-foreground" />
           <span className="text-muted-foreground">Density:</span>
-          <span className="text-foreground">{junkyardType.wallDensity >= 0.18 ? 'Dense' : 'Open'}</span>
+          <span className="text-foreground">{biome.wallDensity >= 0.14 ? 'Dense' : 'Open'}</span>
+        </div>
+        <div className="flex items-center gap-1">
+          <AlertTriangle className="w-3 h-3 text-muted-foreground" />
+          <span className="text-muted-foreground">Barriers:</span>
+          <span className="text-foreground">{biome.barrierDensity >= 0.06 ? 'Common' : 'Few'}</span>
+        </div>
+      </div>
+      
+      {/* Terrain Types */}
+      <div className="mb-4">
+        <p className="text-xs font-industrial text-muted-foreground uppercase tracking-wider mb-2">
+          Terrain Types
+        </p>
+        <div className="flex flex-wrap gap-1">
+          {biome.terrainTypes.map((terrain) => (
+            <span
+              key={terrain.type}
+              className="px-2 py-1 rounded bg-muted/50 text-[10px] flex items-center gap-1"
+              title={terrain.description}
+            >
+              <span>{terrain.icon}</span>
+              <span className="text-muted-foreground">{terrain.name}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+      
+      {/* Barrier Types */}
+      <div className="mb-4">
+        <p className="text-xs font-industrial text-muted-foreground uppercase tracking-wider mb-2">
+          Barriers (Soft Gates)
+        </p>
+        <div className="flex flex-wrap gap-1">
+          {biome.barrierTypes.map((barrier) => (
+            <span
+              key={barrier.type}
+              className="px-2 py-1 rounded bg-destructive/10 text-[10px] flex items-center gap-1"
+              title={barrier.description}
+            >
+              <span>{barrier.icon}</span>
+              <span className="text-muted-foreground">{barrier.name}</span>
+            </span>
+          ))}
         </div>
       </div>
       
@@ -129,14 +187,46 @@ export function JunkyardPreview({ junkyardType, seed }: JunkyardPreviewProps) {
         ))}
       </div>
       
+      {/* Biome-Specific Items */}
+      {biomeItems.length > 0 && (
+        <div className="mt-4 pt-3 border-t border-border">
+          <p className="text-xs font-industrial text-muted-foreground uppercase tracking-wider mb-2">
+            Unique Finds
+          </p>
+          <div className="flex flex-wrap gap-1">
+            {biomeItems.slice(0, 5).map((item, idx) => {
+              const rarityColors: Record<string, string> = {
+                common: 'bg-muted text-muted-foreground',
+                uncommon: 'bg-primary/20 text-primary',
+                rare: 'bg-blue-500/20 text-blue-400',
+                epic: 'bg-purple-500/20 text-purple-400',
+                legendary: 'bg-amber-500/20 text-amber-400',
+              };
+              return (
+                <span
+                  key={idx}
+                  className={cn(
+                    "px-2 py-1 rounded text-[10px] flex items-center gap-1",
+                    rarityColors[item.rarity]
+                  )}
+                >
+                  <span>{item.icon}</span>
+                  <span>{item.name}</span>
+                </span>
+              );
+            })}
+          </div>
+        </div>
+      )}
+      
       {/* Rarity Bonuses */}
-      {Object.keys(junkyardType.rarityWeights).length > 0 && (
+      {Object.keys(biome.rarityWeights).length > 0 && (
         <div className="mt-4 pt-3 border-t border-border">
           <p className="text-xs font-industrial text-muted-foreground uppercase tracking-wider mb-2">
             Rarity Modifiers
           </p>
           <div className="flex flex-wrap gap-2">
-            {Object.entries(junkyardType.rarityWeights).map(([rarity, weight]) => {
+            {Object.entries(biome.rarityWeights).map(([rarity, weight]) => {
               if (weight <= 1) return null;
               const rarityColors: Record<string, string> = {
                 common: 'bg-muted text-muted-foreground',
