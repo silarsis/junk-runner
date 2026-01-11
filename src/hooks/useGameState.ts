@@ -11,6 +11,7 @@ import {
   Rarity,
   HelperRobot,
   Bag,
+  TerrainTile,
   BASIC_BATTERY_CAPACITY,
   BASIC_STORAGE_WIDTH,
   BASIC_STORAGE_HEIGHT,
@@ -25,7 +26,7 @@ import {
   createBasicStorage,
   createBasicMobility,
 } from '@/data/itemTemplates';
-import { generateJunkyard, isTilePassable } from '@/lib/terrainGenerator';
+import { generateJunkyard, isTilePassable, getTerrainAt } from '@/lib/terrainGenerator';
 import { HELPER_FRAMES } from '@/data/upgradeData';
 
 const STORAGE_KEY = 'junkrunner_save';
@@ -244,6 +245,10 @@ export function useGameState() {
         if (parsed.junkyard && !parsed.junkyard.walls) {
           parsed.junkyard.walls = [];
         }
+        // Migration: add terrain if missing
+        if (parsed.junkyard && !parsed.junkyard.terrain) {
+          parsed.junkyard.terrain = [];
+        }
         // Load bag items from storage
         if (parsed.bagItems) {
           setBagItems(parsed.bagItems);
@@ -324,9 +329,11 @@ export function useGameState() {
         return prev;
       }
       
-      // Get movement type from primary helper
+      // Get movement type and mobility name from primary helper
       const primary = getPrimaryHelper(prev.player);
-      const movementType = primary?.components.mobility?.movementType || 'basic';
+      const mobility = primary?.components.mobility;
+      const movementType = mobility?.movementType || 'basic';
+      const mobilityName = mobility?.name?.toLowerCase() || '';
       
       const absDx = Math.abs(dx);
       const absDy = Math.abs(dy);
@@ -335,19 +342,15 @@ export function useGameState() {
       let isValidMove = false;
       switch (movementType) {
         case 'basic':
-          // Only orthogonal (up/down/left/right), 1 tile
           isValidMove = (absDx + absDy === 1) && (absDx <= 1 && absDy <= 1);
           break;
         case 'extended':
-          // Only orthogonal (up/down/left/right), up to 2 tiles
           isValidMove = ((absDx === 0 && absDy >= 1 && absDy <= 2) || (absDy === 0 && absDx >= 1 && absDx <= 2));
           break;
         case 'diagonal':
-          // Orthogonal OR diagonal, 1 tile
           isValidMove = (absDx <= 1 && absDy <= 1) && (absDx + absDy >= 1);
           break;
         case 'jump':
-          // Can move up to 2 tiles in any direction (can jump over obstacles)
           isValidMove = (absDx <= 2 && absDy <= 2) && (absDx + absDy >= 1);
           break;
       }
@@ -358,24 +361,119 @@ export function useGameState() {
       
       // Check destination is passable (jump can skip intermediate tiles)
       if (!isTilePassable(prev.junkyard, newX, newY)) {
+        // Spider legs can traverse walls at 2x battery cost
+        if (mobilityName.includes('spider')) {
+          // Allow wall traversal but we'll add extra cost later
+        } else {
+          return prev;
+        }
+      }
+      
+      // Calculate base battery cost
+      let batteryCost = 1;
+      
+      // Check terrain at destination
+      const destinationTerrain = getTerrainAt(prev.junkyard, newX, newY);
+      let updatedJunkyard = revealTilesAround(prev.junkyard, newX, newY);
+      let updatedBagItems = [...bagItems];
+      
+      // Apply terrain effects
+      if (destinationTerrain && movementType !== 'jump') {
+        // Jump jets skip over hazards entirely
+        switch (destinationTerrain.type) {
+          case 'mud':
+            // Costs 2 battery unless you have treads
+            if (!mobilityName.includes('tread')) {
+              batteryCost = 2;
+            }
+            break;
+          case 'toxic':
+            // Damage items in bag (reduce condition by 5)
+            updatedBagItems = bagItems.map(item => ({
+              ...item,
+              condition: Math.max(0, item.condition - 5),
+            }));
+            break;
+          case 'electric':
+            // Drains 3 battery (could add insulated wheels later)
+            batteryCost = 3;
+            break;
+          case 'oil':
+            // Slide effect handled separately after move
+            // Racing wheels slide further (handled in slide logic)
+            break;
+          case 'magnetic':
+            // Weight penalty handled elsewhere (inventory checks)
+            break;
+          case 'fog':
+            // Reduced reveal radius - reveal only 1 tile around
+            const newRevealed = updatedJunkyard.revealedTiles.map(row => [...row]);
+            for (let ddy = -1; ddy <= 1; ddy++) {
+              for (let ddx = -1; ddx <= 1; ddx++) {
+                const nx = newX + ddx;
+                const ny = newY + ddy;
+                if (nx >= 0 && nx < updatedJunkyard.width && ny >= 0 && ny < updatedJunkyard.height) {
+                  newRevealed[ny][nx] = true;
+                }
+              }
+            }
+            updatedJunkyard = { ...updatedJunkyard, revealedTiles: newRevealed };
+            break;
+        }
+      }
+      
+      // Spider legs wall traversal costs 2x
+      const wallAtDest = prev.junkyard.walls.some(w => w.x === newX && w.y === newY);
+      if (wallAtDest && mobilityName.includes('spider')) {
+        batteryCost = batteryCost * 2;
+      }
+      
+      // Check if we have enough battery
+      if (prev.player.currentCharge < batteryCost) {
         return prev;
       }
       
-      const junkyard = revealTilesAround(prev.junkyard, newX, newY);
+      // Update bag items if toxic damage occurred
+      if (updatedBagItems !== bagItems) {
+        setBagItems(updatedBagItems);
+      }
+      
+      let finalX = newX;
+      let finalY = newY;
+      
+      // Handle oil slick sliding
+      if (destinationTerrain?.type === 'oil' && movementType !== 'jump') {
+        const slideDistance = mobilityName.includes('racing') ? 2 : 1;
+        const dirX = dx === 0 ? 0 : dx / absDx;
+        const dirY = dy === 0 ? 0 : dy / absDy;
+        
+        for (let s = 1; s <= slideDistance; s++) {
+          const slideX = newX + dirX * s;
+          const slideY = newY + dirY * s;
+          if (isTilePassable(prev.junkyard, slideX, slideY)) {
+            finalX = slideX;
+            finalY = slideY;
+            // Reveal tiles along slide path
+            updatedJunkyard = revealTilesAround(updatedJunkyard, slideX, slideY);
+          } else {
+            break;
+          }
+        }
+      }
       
       return {
         ...prev,
-        junkyard,
+        junkyard: updatedJunkyard,
         player: { 
           ...prev.player, 
-          playerX: newX, 
-          playerY: newY,
-          currentCharge: prev.player.currentCharge - 1,
+          playerX: finalX, 
+          playerY: finalY,
+          currentCharge: prev.player.currentCharge - batteryCost,
         },
         turnCount: prev.turnCount + 1,
       };
     });
-  }, []);
+  }, [bagItems]);
 
   const getCurrentPile = useCallback((): JunkPile | null => {
     if (!gameState?.junkyard) return null;

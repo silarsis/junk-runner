@@ -1,9 +1,19 @@
 import { motion } from 'framer-motion';
 import { Search, Home, Package, Battery, BatteryWarning } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState, JunkPile, Bag, HelperRobot } from '@/types/game';
-import { isTilePassable, getWallAt } from '@/lib/terrainGenerator';
+import { GameState, JunkPile, Bag, HelperRobot, TerrainType } from '@/types/game';
+import { isTilePassable, getWallAt, getTerrainAt } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
+
+// Terrain type styling
+const TERRAIN_STYLES: Record<TerrainType, { bg: string; border: string }> = {
+  mud: { bg: 'bg-amber-900/40', border: 'border-amber-700/50' },
+  toxic: { bg: 'bg-lime-500/30', border: 'border-lime-400/50' },
+  oil: { bg: 'bg-slate-800/60', border: 'border-slate-600/50' },
+  electric: { bg: 'bg-yellow-400/30', border: 'border-yellow-300/50' },
+  magnetic: { bg: 'bg-purple-500/30', border: 'border-purple-400/50' },
+  fog: { bg: 'bg-slate-400/40', border: 'border-slate-300/50' },
+};
 
 type MovementType = 'basic' | 'diagonal' | 'jump' | 'extended';
 
@@ -217,10 +227,18 @@ export function JunkyardScreen({
               const isPlayer = x === player.playerX && y === player.playerY;
               const pile = junkyard.piles.find(p => p.x === x && p.y === y);
               const wall = getWallAt(junkyard, x, y);
+              const terrain = getTerrainAt(junkyard, x, y);
               const droppedItem = junkyard.droppedItems.find(d => d.x === x && d.y === y);
               const isTarget = isValidTarget(x, y);
               const isPassable = isTilePassable(junkyard, x, y);
-              const canMoveTo = isRevealed && isTarget && !isPlayer && isPassable && !isBatteryEmpty;
+              
+              // Spider legs can traverse walls
+              const primary = player.helpers.find(h => h.isPrimary);
+              const mobilityName = primary?.components.mobility?.name?.toLowerCase() || '';
+              const canTraverseWall = mobilityName.includes('spider') && wall;
+              const canMoveTo = isRevealed && isTarget && !isPlayer && (isPassable || canTraverseWall) && !isBatteryEmpty;
+              
+              const terrainStyle = terrain ? TERRAIN_STYLES[terrain.type] : null;
 
               return (
                 <motion.button
@@ -229,7 +247,9 @@ export function JunkyardScreen({
                     "aspect-square relative flex items-center justify-center rounded-sm transition-all",
                     "min-h-[32px] min-w-[32px]",
                     !isRevealed && "bg-fog",
-                    isRevealed && !wall && "bg-revealed",
+                    isRevealed && !wall && !terrainStyle && "bg-revealed",
+                    isRevealed && !wall && terrainStyle && terrainStyle.bg,
+                    isRevealed && !wall && terrainStyle && `border ${terrainStyle.border}`,
                     isRevealed && wall && "bg-muted",
                     isPlayer && "ring-2 ring-primary ring-inset bg-primary/20",
                     canMoveTo && "ring-1 ring-primary/50 cursor-pointer hover:bg-primary/10 active:scale-95",
@@ -243,6 +263,11 @@ export function JunkyardScreen({
                   transition={{ duration: 0.2 }}
                   whileTap={canMoveTo ? { scale: 0.9 } : {}}
                 >
+                  {/* Terrain hazard indicator */}
+                  {isRevealed && terrain && !wall && !pile && (
+                    <span className="absolute text-xs opacity-70">{terrain.icon}</span>
+                  )}
+                  
                   {/* Wall obstacle */}
                   {isRevealed && wall && (
                     <span className="text-base sm:text-lg opacity-60">{wall.icon}</span>
@@ -282,7 +307,7 @@ export function JunkyardScreen({
                   )}
                   
                   {/* Adjacent indicator */}
-                  {canMoveTo && !pile && !wall && (
+                  {canMoveTo && !pile && !wall && !terrain && (
                     <span className="text-primary/60 text-xs">•</span>
                   )}
                 </motion.button>

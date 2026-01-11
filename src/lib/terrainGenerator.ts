@@ -1,6 +1,16 @@
 import { v4 as uuidv4 } from 'uuid';
-import { Junkyard, JunkPile, WallTile } from '@/types/game';
+import { Junkyard, JunkPile, WallTile, TerrainTile, TerrainType } from '@/types/game';
 import { WALL_ICONS } from '@/data/itemTemplates';
+
+// Terrain type configurations
+export const TERRAIN_CONFIG: Record<TerrainType, { icon: string; weight: number }> = {
+  mud: { icon: '🟤', weight: 25 },
+  toxic: { icon: '☢️', weight: 15 },
+  oil: { icon: '🛢️', weight: 20 },
+  electric: { icon: '⚡', weight: 10 },
+  magnetic: { icon: '🧲', weight: 15 },
+  fog: { icon: '🌫️', weight: 15 },
+};
 
 // Modular terrain generation configuration
 export interface TerrainConfig {
@@ -9,6 +19,7 @@ export interface TerrainConfig {
   pileCountMin: number;
   pileCountMax: number;
   wallDensity: number; // 0-1, percentage of tiles that are walls
+  hazardDensity: number; // 0-1, percentage of tiles that are hazards
   spawnClearRadius: number; // Keep area around spawn clear
 }
 
@@ -17,7 +28,8 @@ const DEFAULT_CONFIG: TerrainConfig = {
   height: 12,
   pileCountMin: 15,
   pileCountMax: 25,
-  wallDensity: 0.15, // 15% of tiles are walls
+  wallDensity: 0.12,
+  hazardDensity: 0.15,
   spawnClearRadius: 2,
 };
 
@@ -104,6 +116,57 @@ function generatePiles(
   return piles;
 }
 
+// Pick a random terrain type based on weights
+function pickTerrainType(random: () => number): TerrainType {
+  const types = Object.keys(TERRAIN_CONFIG) as TerrainType[];
+  const totalWeight = types.reduce((sum, t) => sum + TERRAIN_CONFIG[t].weight, 0);
+  let roll = random() * totalWeight;
+  
+  for (const type of types) {
+    roll -= TERRAIN_CONFIG[type].weight;
+    if (roll <= 0) return type;
+  }
+  return 'mud';
+}
+
+// Generate terrain hazards
+function generateTerrain(
+  random: () => number, 
+  config: TerrainConfig, 
+  usedPositions: Set<string>
+): TerrainTile[] {
+  const terrain: TerrainTile[] = [];
+  const totalTiles = config.width * config.height;
+  const hazardCount = Math.floor(totalTiles * config.hazardDensity);
+  
+  for (let i = 0; i < hazardCount; i++) {
+    let attempts = 0;
+    let x: number, y: number;
+    
+    do {
+      x = Math.floor(random() * config.width);
+      y = Math.floor(random() * config.height);
+      attempts++;
+    } while (
+      (usedPositions.has(`${x},${y}`) || isInSpawnZone(x, y, config)) && 
+      attempts < 50
+    );
+    
+    if (attempts < 50) {
+      // Don't add to usedPositions - terrain can coexist with piles
+      const type = pickTerrainType(random);
+      terrain.push({
+        x,
+        y,
+        type,
+        icon: TERRAIN_CONFIG[type].icon,
+      });
+    }
+  }
+  
+  return terrain;
+}
+
 // Main junkyard generation function
 export function generateJunkyard(seed: number, configOverrides?: Partial<TerrainConfig>): Junkyard {
   const config = { ...DEFAULT_CONFIG, ...configOverrides };
@@ -120,6 +183,7 @@ export function generateJunkyard(seed: number, configOverrides?: Partial<Terrain
   
   // Generate terrain features in order
   const walls = generateWalls(random, config, usedPositions);
+  const terrain = generateTerrain(random, config, usedPositions);
   const piles = generatePiles(random, config, usedPositions);
   
   return {
@@ -130,6 +194,7 @@ export function generateJunkyard(seed: number, configOverrides?: Partial<Terrain
     revealedTiles,
     piles,
     walls,
+    terrain,
     droppedItems: [],
   };
 }
@@ -145,4 +210,9 @@ export function isTilePassable(junkyard: Junkyard, x: number, y: number): boolea
 // Get wall at position
 export function getWallAt(junkyard: Junkyard, x: number, y: number): WallTile | null {
   return junkyard.walls.find(w => w.x === x && w.y === y) || null;
+}
+
+// Get terrain at position
+export function getTerrainAt(junkyard: Junkyard, x: number, y: number): TerrainTile | null {
+  return junkyard.terrain.find(t => t.x === x && t.y === y) || null;
 }
