@@ -9,48 +9,59 @@ import {
   InventoryItem,
   CleaningJob,
   Rarity,
-  STARTER_BATTERY_CAPACITY
+  HelperRobot,
+  Bag,
+  BASIC_BATTERY_CAPACITY,
+  BASIC_STORAGE_WIDTH,
+  BASIC_STORAGE_HEIGHT,
+  BASIC_STORAGE_WEIGHT,
 } from '@/types/game';
 import { 
   ITEM_TEMPLATES, 
   RARITY_WEIGHTS, 
   getCleaningDuration,
-  SHOP_BATTERIES
+  SHOP_BATTERIES,
+  createBasicBattery,
+  createBasicStorage,
+  createBasicMobility,
 } from '@/data/itemTemplates';
 import { generateJunkyard, isTilePassable } from '@/lib/terrainGenerator';
+import { HELPER_FRAMES } from '@/data/upgradeData';
 
 const STORAGE_KEY = 'junkrunner_save';
 const SEARCH_TURNS_REQUIRED = 5;
 const REVEAL_RADIUS = 2;
 
+function createPrimaryHelper(): HelperRobot {
+  return {
+    id: 'primary-helper',
+    frameId: 'basic',
+    components: {
+      mobility: createBasicMobility(),
+      modules: [createBasicStorage()],
+      battery: createBasicBattery(),
+    },
+    isDeployed: true,
+    isPrimary: true,
+  };
+}
+
 function createInitialPlayerState(): PlayerState {
   return {
     currency: 50,
-    bag: {
-      width: 4,
-      height: 4,
-      maxWeight: 30,
-      items: [],
-    },
     stash: [],
     currentYardId: null,
     baseUpgrades: {
-      bagWidth: 0,
-      bagHeight: 0,
-      bagMaxWeight: 0,
       cleaningSlots: 0,
       cleaningSpeed: 0,
       workshopTier: 0,
       controlCapacity: 0,
     },
-    helpers: [],
+    helpers: [createPrimaryHelper()],
     cleaningJobs: [],
     playerX: 0,
     playerY: 0,
-    battery: {
-      currentCharge: STARTER_BATTERY_CAPACITY,
-      equippedBatteryId: null,
-    },
+    currentCharge: BASIC_BATTERY_CAPACITY,
   };
 }
 
@@ -115,10 +126,48 @@ function generateLoot(seed: number): Item[] {
       revealedModifiers: [],
       icon: template.icon,
       batteryCapacity: template.batteryCapacity,
+      storageWidth: template.storageWidth,
+      storageHeight: template.storageHeight,
+      storageMaxWeight: template.storageMaxWeight,
+      movementType: template.movementType,
     });
   }
   
   return items;
+}
+
+// Get the bag (storage) from the primary helper's storage module
+function getBagFromHelper(helper: HelperRobot): Bag {
+  const storageModule = helper.components.modules.find(m => m?.category === 'storage');
+  if (storageModule && storageModule.storageWidth && storageModule.storageHeight) {
+    return {
+      width: storageModule.storageWidth,
+      height: storageModule.storageHeight,
+      maxWeight: storageModule.storageMaxWeight || BASIC_STORAGE_WEIGHT,
+      items: [],
+    };
+  }
+  // Default fallback
+  return {
+    width: BASIC_STORAGE_WIDTH,
+    height: BASIC_STORAGE_HEIGHT,
+    maxWeight: BASIC_STORAGE_WEIGHT,
+    items: [],
+  };
+}
+
+// Get max battery capacity from helper's battery
+function getMaxBatteryCapacity(helper: HelperRobot): number {
+  const battery = helper.components.battery;
+  if (battery?.batteryCapacity) {
+    return battery.batteryCapacity;
+  }
+  return BASIC_BATTERY_CAPACITY;
+}
+
+// Get primary helper
+function getPrimaryHelper(player: PlayerState): HelperRobot | undefined {
+  return player.helpers.find(h => h.isPrimary);
 }
 
 function canFitItem(bag: { width: number; height: number; items: InventoryItem[] }, item: Item, gridX: number, gridY: number, rotated: boolean): boolean {
@@ -170,23 +219,11 @@ function findFreeSlot(bag: { width: number; height: number; items: InventoryItem
   return null;
 }
 
-// Get the max battery capacity based on equipped battery
-function getMaxBatteryCapacity(player: PlayerState): number {
-  if (!player.battery.equippedBatteryId) {
-    return STARTER_BATTERY_CAPACITY;
-  }
-  
-  const battery = player.stash.find(i => i.id === player.battery.equippedBatteryId);
-  if (battery && battery.batteryCapacity) {
-    return battery.batteryCapacity;
-  }
-  
-  return STARTER_BATTERY_CAPACITY;
-}
-
 export function useGameState() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  // Runtime bag state (not persisted directly, derived from helper)
+  const [bagItems, setBagItems] = useState<InventoryItem[]>([]);
 
   // Load game state
   useEffect(() => {
@@ -194,16 +231,22 @@ export function useGameState() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Migration: add battery if missing
-        if (!parsed.player.battery) {
-          parsed.player.battery = {
-            currentCharge: STARTER_BATTERY_CAPACITY,
-            equippedBatteryId: null,
-          };
+        // Migration: ensure primary helper exists
+        if (!parsed.player.helpers || parsed.player.helpers.length === 0) {
+          parsed.player.helpers = [createPrimaryHelper()];
+        }
+        // Migration: ensure currentCharge exists
+        if (parsed.player.currentCharge === undefined) {
+          const primary = parsed.player.helpers.find((h: HelperRobot) => h.isPrimary);
+          parsed.player.currentCharge = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
         }
         // Migration: add walls if missing
         if (parsed.junkyard && !parsed.junkyard.walls) {
           parsed.junkyard.walls = [];
+        }
+        // Load bag items from storage
+        if (parsed.bagItems) {
+          setBagItems(parsed.bagItems);
         }
         setGameState(parsed);
       } catch {
@@ -226,9 +269,23 @@ export function useGameState() {
   // Save game state
   useEffect(() => {
     if (gameState && !isLoading) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(gameState));
+      const saveData = { ...gameState, bagItems };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
     }
-  }, [gameState, isLoading]);
+  }, [gameState, bagItems, isLoading]);
+
+  // Get current bag dimensions from primary helper
+  const getCurrentBag = useCallback((): Bag => {
+    if (!gameState) {
+      return { width: BASIC_STORAGE_WIDTH, height: BASIC_STORAGE_HEIGHT, maxWeight: BASIC_STORAGE_WEIGHT, items: bagItems };
+    }
+    const primary = getPrimaryHelper(gameState.player);
+    if (!primary) {
+      return { width: BASIC_STORAGE_WIDTH, height: BASIC_STORAGE_HEIGHT, maxWeight: BASIC_STORAGE_WEIGHT, items: bagItems };
+    }
+    const baseBag = getBagFromHelper(primary);
+    return { ...baseBag, items: bagItems };
+  }, [gameState, bagItems]);
 
   const enterJunkyard = useCallback(() => {
     setGameState(prev => {
@@ -268,7 +325,7 @@ export function useGameState() {
       }
       
       // Check battery
-      if (prev.player.battery.currentCharge <= 0) {
+      if (prev.player.currentCharge <= 0) {
         return prev;
       }
       
@@ -281,10 +338,7 @@ export function useGameState() {
           ...prev.player, 
           playerX: newX, 
           playerY: newY,
-          battery: {
-            ...prev.player.battery,
-            currentCharge: prev.player.battery.currentCharge - 1,
-          },
+          currentCharge: prev.player.currentCharge - 1,
         },
         turnCount: prev.turnCount + 1,
       };
@@ -306,7 +360,7 @@ export function useGameState() {
       if (!prev || !prev.junkyard) return prev;
       
       // Check battery
-      if (prev.player.battery.currentCharge <= 0) {
+      if (prev.player.currentCharge <= 0) {
         return prev;
       }
       
@@ -323,20 +377,19 @@ export function useGameState() {
       
       const updatedPiles = [...prev.junkyard.piles];
       
-      // Drain battery for search action
-      const newBattery = {
-        ...prev.player.battery,
-        currentCharge: prev.player.battery.currentCharge - 1,
-      };
-      
       if (newProgress >= SEARCH_TURNS_REQUIRED) {
         // Generate loot
         const loot = generateLoot(Date.now() + pileIndex);
         updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress, isDepleted: true };
         
+        // Get current bag
+        const primary = getPrimaryHelper(prev.player);
+        const baseBag = primary ? getBagFromHelper(primary) : { width: BASIC_STORAGE_WIDTH, height: BASIC_STORAGE_HEIGHT, maxWeight: BASIC_STORAGE_WEIGHT, items: [] };
+        
         // Try to add items to bag
-        let bag = { ...prev.player.bag, items: [...prev.player.bag.items] };
-        const currentWeight = bag.items.reduce((sum, i) => sum + i.weight, 0);
+        let newBagItems = [...bagItems];
+        const currentWeight = newBagItems.reduce((sum, i) => sum + i.weight, 0);
+        const bag = { ...baseBag, items: newBagItems };
         
         for (const item of loot) {
           if (currentWeight + item.weight <= bag.maxWeight) {
@@ -348,15 +401,21 @@ export function useGameState() {
                 gridY: slot.y,
                 rotated: slot.rotated,
               };
-              bag.items.push(invItem);
+              newBagItems.push(invItem);
+              bag.items = newBagItems;
             }
           }
         }
         
+        setBagItems(newBagItems);
+        
         return {
           ...prev,
           junkyard: { ...prev.junkyard, piles: updatedPiles },
-          player: { ...prev.player, bag, battery: newBattery },
+          player: { 
+            ...prev.player, 
+            currentCharge: prev.player.currentCharge - 1,
+          },
           turnCount: prev.turnCount + 1,
         };
       } else {
@@ -364,29 +423,30 @@ export function useGameState() {
         return {
           ...prev,
           junkyard: { ...prev.junkyard, piles: updatedPiles },
-          player: { ...prev.player, battery: newBattery },
+          player: { 
+            ...prev.player, 
+            currentCharge: prev.player.currentCharge - 1,
+          },
           turnCount: prev.turnCount + 1,
         };
       }
     });
-  }, []);
+  }, [bagItems]);
 
   const returnToBase = useCallback(() => {
     setGameState(prev => {
       if (!prev) return prev;
       
       // Recharge battery when returning to base
-      const maxCapacity = getMaxBatteryCapacity(prev.player);
+      const primary = getPrimaryHelper(prev.player);
+      const maxCapacity = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
       
       return {
         ...prev,
         player: { 
           ...prev.player, 
           currentYardId: null,
-          battery: {
-            ...prev.player.battery,
-            currentCharge: maxCapacity,
-          },
+          currentCharge: maxCapacity,
         },
       };
     });
@@ -483,9 +543,6 @@ export function useGameState() {
       const item = prev.player.stash.find(i => i.id === itemId);
       if (!item) return prev;
       
-      // Don't allow selling equipped battery
-      if (item.id === prev.player.battery.equippedBatteryId) return prev;
-      
       const rarityMult: Record<Rarity, number> = {
         common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
       };
@@ -509,18 +566,18 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      const itemsToTransfer = prev.player.bag.items.map(({ gridX, gridY, rotated, ...item }) => item);
+      const itemsToTransfer = bagItems.map(({ gridX, gridY, rotated, ...item }) => item);
+      setBagItems([]);
       
       return {
         ...prev,
         player: {
           ...prev.player,
-          bag: { ...prev.player.bag, items: [] },
           stash: [...prev.player.stash, ...itemsToTransfer],
         },
       };
     });
-  }, []);
+  }, [bagItems]);
 
   const purchaseUpgrade = useCallback((upgradeId: string) => {
     setGameState(prev => {
@@ -541,54 +598,156 @@ export function useGameState() {
         [upgradeId]: currentLevel + 1,
       };
       
-      // Apply bag upgrades immediately
-      let newBag = { ...prev.player.bag };
-      if (upgradeId === 'bagWidth') {
-        newBag.width = upgrade.getValue(currentLevel + 1);
-      } else if (upgradeId === 'bagHeight') {
-        newBag.height = upgrade.getValue(currentLevel + 1);
-      } else if (upgradeId === 'bagMaxWeight') {
-        newBag.maxWeight = upgrade.getValue(currentLevel + 1);
-      }
-      
       return {
         ...prev,
         player: {
           ...prev.player,
           currency: prev.player.currency - cost,
           baseUpgrades: newUpgrades,
-          bag: newBag,
         },
       };
     });
   }, []);
 
-  const equipBattery = useCallback((batteryId: string | null) => {
+  // Install a component to a helper
+  const installComponent = useCallback((helperId: string, slotType: 'mobility' | 'battery' | 'module', item: Item, moduleIndex?: number) => {
     setGameState(prev => {
       if (!prev) return prev;
       
-      if (batteryId) {
-        const battery = prev.player.stash.find(i => i.id === batteryId);
-        if (!battery || battery.category !== 'battery') return prev;
+      const helperIndex = prev.player.helpers.findIndex(h => h.id === helperId);
+      if (helperIndex === -1) return prev;
+      
+      const helper = prev.player.helpers[helperIndex];
+      
+      // Check if item exists in stash
+      const itemInStash = prev.player.stash.find(i => i.id === item.id);
+      if (!itemInStash) return prev;
+      
+      // Create new components
+      const newComponents = { ...helper.components };
+      let oldComponent: Item | null = null;
+      
+      if (slotType === 'mobility') {
+        if (item.category !== 'mobility') return prev;
+        oldComponent = newComponents.mobility;
+        newComponents.mobility = item;
+      } else if (slotType === 'battery') {
+        if (item.category !== 'battery') return prev;
+        oldComponent = newComponents.battery;
+        newComponents.battery = item;
+      } else if (slotType === 'module') {
+        const frame = HELPER_FRAMES[helper.frameId];
+        const idx = moduleIndex ?? newComponents.modules.length;
+        if (idx >= frame.slots.moduleSlots) return prev;
+        if (item.category !== 'module' && item.category !== 'storage') return prev;
+        
+        // Get old module if replacing
+        if (idx < newComponents.modules.length) {
+          oldComponent = newComponents.modules[idx];
+        }
+        
+        const newModules = [...newComponents.modules];
+        newModules[idx] = item;
+        newComponents.modules = newModules;
       }
       
-      // Get the capacity of the new battery
-      let newCapacity = STARTER_BATTERY_CAPACITY;
-      if (batteryId) {
-        const battery = prev.player.stash.find(i => i.id === batteryId);
-        if (battery?.batteryCapacity) {
-          newCapacity = battery.batteryCapacity;
-        }
+      // Update helper
+      const newHelpers = [...prev.player.helpers];
+      newHelpers[helperIndex] = { ...helper, components: newComponents };
+      
+      // Update stash: remove installed item, add old component if any
+      let newStash = prev.player.stash.filter(i => i.id !== item.id);
+      if (oldComponent && oldComponent.id !== item.id) {
+        newStash = [...newStash, oldComponent];
+      }
+      
+      // Recalculate battery capacity if needed
+      let newCharge = prev.player.currentCharge;
+      if (slotType === 'battery' && helper.isPrimary) {
+        const newMax = item.batteryCapacity || BASIC_BATTERY_CAPACITY;
+        newCharge = Math.min(newCharge, newMax);
       }
       
       return {
         ...prev,
         player: {
           ...prev.player,
-          battery: {
-            equippedBatteryId: batteryId,
-            currentCharge: newCapacity,
-          },
+          helpers: newHelpers,
+          stash: newStash,
+          currentCharge: newCharge,
+        },
+      };
+    });
+  }, []);
+
+  // Remove a component from a helper and return to stash
+  const removeComponent = useCallback((helperId: string, slotType: 'mobility' | 'battery' | 'module', moduleIndex?: number) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const helperIndex = prev.player.helpers.findIndex(h => h.id === helperId);
+      if (helperIndex === -1) return prev;
+      
+      const helper = prev.player.helpers[helperIndex];
+      const newComponents = { ...helper.components };
+      let removedComponent: Item | null = null;
+      let replacementComponent: Item | null = null;
+      
+      if (slotType === 'mobility') {
+        removedComponent = newComponents.mobility;
+        // Replace with basic
+        replacementComponent = createBasicMobility();
+        newComponents.mobility = replacementComponent;
+      } else if (slotType === 'battery') {
+        removedComponent = newComponents.battery;
+        // Replace with basic
+        replacementComponent = createBasicBattery();
+        newComponents.battery = replacementComponent;
+      } else if (slotType === 'module' && moduleIndex !== undefined) {
+        if (moduleIndex >= newComponents.modules.length) return prev;
+        removedComponent = newComponents.modules[moduleIndex];
+        
+        // If it's the only storage module, replace with basic storage
+        const otherStorageModules = newComponents.modules.filter((m, i) => i !== moduleIndex && m?.category === 'storage');
+        if (removedComponent?.category === 'storage' && otherStorageModules.length === 0) {
+          replacementComponent = createBasicStorage();
+          const newModules = [...newComponents.modules];
+          newModules[moduleIndex] = replacementComponent;
+          newComponents.modules = newModules;
+        } else {
+          // Just remove the module
+          newComponents.modules = newComponents.modules.filter((_, i) => i !== moduleIndex);
+        }
+      }
+      
+      // Don't allow removing basic components
+      if (removedComponent?.id.startsWith('basic-')) {
+        return prev;
+      }
+      
+      // Update helper
+      const newHelpers = [...prev.player.helpers];
+      newHelpers[helperIndex] = { ...helper, components: newComponents };
+      
+      // Add removed component to stash
+      let newStash = prev.player.stash;
+      if (removedComponent && !removedComponent.id.startsWith('basic-')) {
+        newStash = [...newStash, removedComponent];
+      }
+      
+      // Recalculate battery if changed
+      let newCharge = prev.player.currentCharge;
+      if (slotType === 'battery' && helper.isPrimary) {
+        newCharge = BASIC_BATTERY_CAPACITY;
+      }
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          helpers: newHelpers,
+          stash: newStash,
+          currentCharge: newCharge,
         },
       };
     });
@@ -633,6 +792,7 @@ export function useGameState() {
 
   const resetGame = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
+    setBagItems([]);
     setGameState({
       player: createInitialPlayerState(),
       junkyard: null,
@@ -640,88 +800,18 @@ export function useGameState() {
     });
   }, []);
 
-  // Install a module from stash to a helper's slot
-  const installModule = useCallback((helperId: string, slotIndex: number, item: Item) => {
-    setGameState(prev => {
-      if (!prev) return prev;
-      
-      const helperIndex = prev.player.helpers.findIndex(h => h.id === helperId);
-      if (helperIndex === -1) return prev;
-      
-      const helper = prev.player.helpers[helperIndex];
-      const frame = require('@/data/upgradeData').HELPER_FRAMES[helper.frameId];
-      
-      // Check if slot is valid
-      if (slotIndex < 0 || slotIndex >= frame.moduleSlots) return prev;
-      
-      // Check if item exists in stash and is a module
-      const itemInStash = prev.player.stash.find(i => i.id === item.id);
-      if (!itemInStash || itemInStash.category !== 'module') return prev;
-      
-      // Create new modules array
-      const newModules = [...helper.modules];
-      newModules[slotIndex] = item;
-      
-      // Update helper
-      const newHelpers = [...prev.player.helpers];
-      newHelpers[helperIndex] = { ...helper, modules: newModules };
-      
-      // Remove from stash
-      const newStash = prev.player.stash.filter(i => i.id !== item.id);
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          helpers: newHelpers,
-          stash: newStash,
-        },
-      };
-    });
-  }, []);
-
-  // Remove a module from a helper's slot and return to stash
-  const removeModule = useCallback((helperId: string, slotIndex: number) => {
-    setGameState(prev => {
-      if (!prev) return prev;
-      
-      const helperIndex = prev.player.helpers.findIndex(h => h.id === helperId);
-      if (helperIndex === -1) return prev;
-      
-      const helper = prev.player.helpers[helperIndex];
-      const module = helper.modules[slotIndex];
-      
-      if (!module) return prev;
-      
-      // Create new modules array without the module
-      const newModules = [...helper.modules];
-      newModules[slotIndex] = undefined as any;
-      
-      // Update helper
-      const newHelpers = [...prev.player.helpers];
-      newHelpers[helperIndex] = { ...helper, modules: newModules.filter(Boolean) };
-      
-      // Add back to stash
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          helpers: newHelpers,
-          stash: [...prev.player.stash, module],
-        },
-      };
-    });
-  }, []);
-
   // Computed values
   const getMaxBattery = useCallback(() => {
-    if (!gameState) return STARTER_BATTERY_CAPACITY;
-    return getMaxBatteryCapacity(gameState.player);
+    if (!gameState) return BASIC_BATTERY_CAPACITY;
+    const primary = getPrimaryHelper(gameState.player);
+    return primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
   }, [gameState]);
 
   return {
     gameState,
     isLoading,
+    bagItems,
+    getCurrentBag,
     enterJunkyard,
     movePlayer,
     getCurrentPile,
@@ -733,11 +823,10 @@ export function useGameState() {
     sellItem,
     transferToStash,
     purchaseUpgrade,
-    equipBattery,
+    installComponent,
+    removeComponent,
     purchaseBattery,
     getMaxBattery,
-    installModule,
-    removeModule,
     resetGame,
   };
 }

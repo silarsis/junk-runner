@@ -1,13 +1,14 @@
 import { motion } from 'framer-motion';
 import { Search, Home, Package, Battery, BatteryWarning } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState, JunkPile, STARTER_BATTERY_CAPACITY } from '@/types/game';
+import { GameState, JunkPile, Bag } from '@/types/game';
 import { isTilePassable, getWallAt } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
 
 interface JunkyardScreenProps {
   gameState: GameState;
   maxBattery: number;
+  currentBag: Bag;
   onMove: (dx: number, dy: number) => void;
   currentPile: JunkPile | null;
   onSearch: () => void;
@@ -18,6 +19,7 @@ interface JunkyardScreenProps {
 export function JunkyardScreen({
   gameState,
   maxBattery,
+  currentBag,
   onMove,
   currentPile,
   onSearch,
@@ -28,10 +30,10 @@ export function JunkyardScreen({
   
   if (!junkyard) return null;
 
-  const currentWeight = player.bag.items.reduce((sum, i) => sum + i.weight, 0);
-  const batteryPercent = (player.battery.currentCharge / maxBattery) * 100;
-  const isBatteryLow = player.battery.currentCharge <= 5;
-  const isBatteryEmpty = player.battery.currentCharge <= 0;
+  const currentWeight = currentBag.items.reduce((sum, i) => sum + i.weight, 0);
+  const batteryPercent = (player.currentCharge / maxBattery) * 100;
+  const isBatteryLow = player.currentCharge <= 5;
+  const isBatteryEmpty = player.currentCharge <= 0;
 
   const getRarityClass = (pile: JunkPile) => {
     if (pile.isDepleted) return 'bg-pile-depleted';
@@ -92,7 +94,7 @@ export function JunkyardScreen({
             "font-mono text-sm",
             isBatteryEmpty ? "text-destructive" : isBatteryLow ? "text-accent" : "text-foreground"
           )}>
-            {player.battery.currentCharge}
+            {player.currentCharge}
           </span>
         </div>
 
@@ -103,7 +105,7 @@ export function JunkyardScreen({
           className="flex items-center gap-2"
         >
           <Package className="w-4 h-4" />
-          <span className="font-mono">{currentWeight}/{player.bag.maxWeight}</span>
+          <span className="font-mono">{currentWeight}/{currentBag.maxWeight}</span>
         </Button>
       </header>
 

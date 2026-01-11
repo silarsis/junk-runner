@@ -1,3 +1,5 @@
+import { FrameType, FrameSlots } from '@/types/game';
+
 export interface UpgradeInfo {
   id: string;
   name: string;
@@ -9,33 +11,6 @@ export interface UpgradeInfo {
 }
 
 export const UPGRADES: Record<string, UpgradeInfo> = {
-  bagWidth: {
-    id: 'bagWidth',
-    name: 'Bag Width',
-    description: 'Expand bag grid width',
-    icon: '↔️',
-    maxLevel: 4,
-    getCost: (level) => 100 * Math.pow(2, level),
-    getValue: (level) => 6 + level, // starts at 6, max 10
-  },
-  bagHeight: {
-    id: 'bagHeight',
-    name: 'Bag Height',
-    description: 'Expand bag grid height',
-    icon: '↕️',
-    maxLevel: 4,
-    getCost: (level) => 100 * Math.pow(2, level),
-    getValue: (level) => 8 + level, // starts at 8, max 12
-  },
-  bagMaxWeight: {
-    id: 'bagMaxWeight',
-    name: 'Max Weight',
-    description: 'Increase carrying capacity',
-    icon: '⚖️',
-    maxLevel: 10,
-    getCost: (level) => 50 * (level + 1),
-    getValue: (level) => 30 + (level * 10), // starts at 30, +10 per level
-  },
   cleaningSlots: {
     id: 'cleaningSlots',
     name: 'Cleaning Slots',
@@ -74,21 +49,48 @@ export const UPGRADES: Record<string, UpgradeInfo> = {
   },
 };
 
-export const HELPER_FRAMES = {
+export interface HelperFrameInfo {
+  id: FrameType;
+  name: string;
+  slots: FrameSlots;
+  icon: string;
+  cost: number;
+  requiredComponents: string[];
+}
+
+export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
+  basic: {
+    id: 'basic',
+    name: 'Basic Frame',
+    slots: {
+      mobilitySlots: 1,
+      moduleSlots: 1,
+      batterySlots: 1,
+    },
+    icon: '🤖',
+    cost: 0,
+    requiredComponents: [],
+  },
   crawler: {
-    id: 'crawler' as const,
+    id: 'crawler',
     name: 'Crawler Frame',
-    carryBonus: 15,
-    moduleSlots: 1,
+    slots: {
+      mobilitySlots: 1,
+      moduleSlots: 2,
+      batterySlots: 1,
+    },
     icon: '🐛',
     cost: 200,
     requiredComponents: ['Motor Unit', 'Steel Plate'],
   },
   scout: {
-    id: 'scout' as const,
+    id: 'scout',
     name: 'Scout Frame',
-    carryBonus: 5,
-    moduleSlots: 2,
+    slots: {
+      mobilitySlots: 1,
+      moduleSlots: 3,
+      batterySlots: 2,
+    },
     icon: '🔭',
     cost: 300,
     requiredComponents: ['Circuit Board', 'Power Cell'],
