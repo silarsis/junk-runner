@@ -8,8 +8,9 @@ import { CleaningScreen } from '@/components/game/CleaningScreen';
 import { SellScreen } from '@/components/game/SellScreen';
 import { UpgradesScreen } from '@/components/game/UpgradesScreen';
 import { WorkshopScreen } from '@/components/game/WorkshopScreen';
+import { BatteryShopScreen } from '@/components/game/BatteryShopScreen';
 
-type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop';
+type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop' | 'battery';
 
 const Index = () => {
   const {
@@ -26,6 +27,9 @@ const Index = () => {
     sellItem,
     transferToStash,
     purchaseUpgrade,
+    equipBattery,
+    purchaseBattery,
+    getMaxBattery,
   } = useGameState();
 
   const [currentScreen, setCurrentScreen] = useState<Screen>('base');
@@ -61,6 +65,7 @@ const Index = () => {
   const currentPile = getCurrentPile();
   const maxCleaningSlots = 1 + gameState.player.baseUpgrades.cleaningSlots;
   const controlCapacity = 1 + gameState.player.baseUpgrades.controlCapacity;
+  const maxBattery = getMaxBattery();
 
   return (
     <div className="min-h-screen bg-background">
@@ -69,11 +74,13 @@ const Index = () => {
           <BaseScreen
             key="base"
             gameState={gameState}
+            maxBattery={maxBattery}
             onEnterJunkyard={handleEnterJunkyard}
             onOpenCleaning={() => setCurrentScreen('cleaning')}
             onOpenSell={() => setCurrentScreen('sell')}
             onOpenUpgrades={() => setCurrentScreen('upgrades')}
             onOpenWorkshop={() => setCurrentScreen('workshop')}
+            onOpenBatteryShop={() => setCurrentScreen('battery')}
             onMoveToNextJunkyard={handleMoveToNextJunkyard}
             onTransferToStash={transferToStash}
           />
@@ -83,6 +90,7 @@ const Index = () => {
           <JunkyardScreen
             key="junkyard"
             gameState={gameState}
+            maxBattery={maxBattery}
             onMove={movePlayer}
             currentPile={currentPile}
             onSearch={searchPile}
@@ -128,6 +136,18 @@ const Index = () => {
             helpers={gameState.player.helpers}
             controlCapacity={controlCapacity}
             currency={gameState.player.currency}
+            onClose={() => setCurrentScreen('base')}
+          />
+        )}
+
+        {currentScreen === 'battery' && (
+          <BatteryShopScreen
+            key="battery"
+            stash={gameState.player.stash}
+            equippedBatteryId={gameState.player.battery.equippedBatteryId}
+            currency={gameState.player.currency}
+            onEquipBattery={equipBattery}
+            onPurchaseBattery={purchaseBattery}
             onClose={() => setCurrentScreen('base')}
           />
         )}

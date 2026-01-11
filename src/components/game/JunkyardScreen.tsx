@@ -1,11 +1,13 @@
 import { motion } from 'framer-motion';
-import { Search, Home, Package } from 'lucide-react';
+import { Search, Home, Package, Battery, BatteryWarning } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState, JunkPile } from '@/types/game';
+import { GameState, JunkPile, STARTER_BATTERY_CAPACITY } from '@/types/game';
+import { isTilePassable, getWallAt } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
 
 interface JunkyardScreenProps {
   gameState: GameState;
+  maxBattery: number;
   onMove: (dx: number, dy: number) => void;
   currentPile: JunkPile | null;
   onSearch: () => void;
@@ -15,6 +17,7 @@ interface JunkyardScreenProps {
 
 export function JunkyardScreen({
   gameState,
+  maxBattery,
   onMove,
   currentPile,
   onSearch,
@@ -26,6 +29,9 @@ export function JunkyardScreen({
   if (!junkyard) return null;
 
   const currentWeight = player.bag.items.reduce((sum, i) => sum + i.weight, 0);
+  const batteryPercent = (player.battery.currentCharge / maxBattery) * 100;
+  const isBatteryLow = player.battery.currentCharge <= 5;
+  const isBatteryEmpty = player.battery.currentCharge <= 0;
 
   const getRarityClass = (pile: JunkPile) => {
     if (pile.isDepleted) return 'bg-pile-depleted';
@@ -33,6 +39,8 @@ export function JunkyardScreen({
   };
 
   const handleTileClick = (x: number, y: number) => {
+    if (isBatteryEmpty) return;
+    
     const dx = x - player.playerX;
     const dy = y - player.playerY;
     
@@ -61,6 +69,33 @@ export function JunkyardScreen({
             <p className="font-mono text-lg">{turnCount}</p>
           </div>
         </div>
+        
+        {/* Battery indicator */}
+        <div className="flex items-center gap-2">
+          {isBatteryLow ? (
+            <BatteryWarning className={cn("w-5 h-5", isBatteryEmpty ? "text-destructive" : "text-accent animate-pulse")} />
+          ) : (
+            <Battery className="w-5 h-5 text-primary" />
+          )}
+          <div className="w-16 h-3 bg-muted rounded-full overflow-hidden">
+            <motion.div
+              className={cn(
+                "h-full",
+                isBatteryEmpty ? "bg-destructive" : isBatteryLow ? "bg-accent" : "bg-primary"
+              )}
+              initial={{ width: 0 }}
+              animate={{ width: `${batteryPercent}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+          <span className={cn(
+            "font-mono text-sm",
+            isBatteryEmpty ? "text-destructive" : isBatteryLow ? "text-accent" : "text-foreground"
+          )}>
+            {player.battery.currentCharge}
+          </span>
+        </div>
+
         <Button 
           variant="steel" 
           size="sm" 
@@ -71,6 +106,19 @@ export function JunkyardScreen({
           <span className="font-mono">{currentWeight}/{player.bag.maxWeight}</span>
         </Button>
       </header>
+
+      {/* Battery Empty Warning */}
+      {isBatteryEmpty && (
+        <motion.div
+          className="mx-3 mt-2 p-3 bg-destructive/20 border border-destructive rounded-lg text-center"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <p className="text-sm text-destructive font-industrial">
+            ⚠️ BATTERY DEPLETED - Return to Base to Recharge
+          </p>
+        </motion.div>
+      )}
 
       {/* Map Grid - Larger cells, tappable */}
       <main className="flex-1 p-3 flex flex-col items-center justify-center overflow-auto">
@@ -86,9 +134,11 @@ export function JunkyardScreen({
               const isRevealed = junkyard.revealedTiles[y]?.[x] ?? false;
               const isPlayer = x === player.playerX && y === player.playerY;
               const pile = junkyard.piles.find(p => p.x === x && p.y === y);
+              const wall = getWallAt(junkyard, x, y);
               const droppedItem = junkyard.droppedItems.find(d => d.x === x && d.y === y);
               const isAdjacent = isAdjacentToPlayer(x, y);
-              const canMoveTo = isRevealed && isAdjacent && !isPlayer;
+              const isPassable = isTilePassable(junkyard, x, y);
+              const canMoveTo = isRevealed && isAdjacent && !isPlayer && isPassable && !isBatteryEmpty;
 
               return (
                 <motion.button
@@ -97,10 +147,12 @@ export function JunkyardScreen({
                     "aspect-square relative flex items-center justify-center rounded-sm transition-all",
                     "min-h-[32px] min-w-[32px]",
                     !isRevealed && "bg-fog",
-                    isRevealed && "bg-revealed",
+                    isRevealed && !wall && "bg-revealed",
+                    isRevealed && wall && "bg-muted",
                     isPlayer && "ring-2 ring-primary ring-inset bg-primary/20",
                     canMoveTo && "ring-1 ring-primary/50 cursor-pointer hover:bg-primary/10 active:scale-95",
-                    !canMoveTo && !isPlayer && "cursor-default"
+                    !canMoveTo && !isPlayer && "cursor-default",
+                    isBatteryEmpty && isAdjacent && "opacity-50"
                   )}
                   onClick={() => canMoveTo && handleTileClick(x, y)}
                   disabled={!canMoveTo}
@@ -109,7 +161,13 @@ export function JunkyardScreen({
                   transition={{ duration: 0.2 }}
                   whileTap={canMoveTo ? { scale: 0.9 } : {}}
                 >
-                  {isRevealed && pile && (
+                  {/* Wall obstacle */}
+                  {isRevealed && wall && (
+                    <span className="text-base sm:text-lg opacity-60">{wall.icon}</span>
+                  )}
+                  
+                  {/* Junk pile */}
+                  {isRevealed && pile && !wall && (
                     <div 
                       className={cn(
                         "absolute inset-1 rounded-sm flex items-center justify-center",
@@ -124,9 +182,13 @@ export function JunkyardScreen({
                       )}
                     </div>
                   )}
-                  {isRevealed && droppedItem && !pile && (
+                  
+                  {/* Dropped item */}
+                  {isRevealed && droppedItem && !pile && !wall && (
                     <span className="text-xs sm:text-sm">{droppedItem.item.icon}</span>
                   )}
+                  
+                  {/* Player */}
                   {isPlayer && (
                     <motion.div
                       className="absolute inset-0 flex items-center justify-center z-10"
@@ -136,8 +198,9 @@ export function JunkyardScreen({
                       <span className="text-lg sm:text-xl">🤖</span>
                     </motion.div>
                   )}
-                  {/* Adjacent indicator arrow */}
-                  {canMoveTo && !pile && (
+                  
+                  {/* Adjacent indicator */}
+                  {canMoveTo && !pile && !wall && (
                     <span className="text-primary/60 text-xs">•</span>
                   )}
                 </motion.button>
@@ -169,10 +232,10 @@ export function JunkyardScreen({
         )}
       </main>
 
-      {/* Action Buttons - Simplified */}
+      {/* Action Buttons */}
       <footer className="industrial-panel p-4 pb-safe">
         <div className="flex gap-3">
-          {currentPile && !currentPile.isDepleted ? (
+          {currentPile && !currentPile.isDepleted && !isBatteryEmpty ? (
             <Button
               variant="action"
               size="xl"
@@ -184,18 +247,18 @@ export function JunkyardScreen({
             </Button>
           ) : (
             <Button
-              variant="nav"
+              variant={isBatteryEmpty ? "danger" : "nav"}
               size="xl"
               className="flex-1"
               onClick={onReturnToBase}
             >
               <Home className="w-5 h-5" />
-              Return to Base
+              {isBatteryEmpty ? "Return & Recharge" : "Return to Base"}
             </Button>
           )}
         </div>
         <p className="text-xs text-muted-foreground text-center mt-2">
-          Tap adjacent tiles to move
+          Tap adjacent tiles to move • Each action uses 1 battery
         </p>
       </footer>
     </div>

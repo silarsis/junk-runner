@@ -1,8 +1,8 @@
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
-export type ItemCategory = 'scrap' | 'component' | 'module' | 'junk';
+export type ItemCategory = 'scrap' | 'component' | 'module' | 'junk' | 'battery';
 
-export type ModifierType = 'carry_bonus' | 'reveal_bonus' | 'cleaning_speed' | 'sell_bonus';
+export type ModifierType = 'carry_bonus' | 'reveal_bonus' | 'cleaning_speed' | 'sell_bonus' | 'battery_capacity';
 
 export interface ItemModifier {
   type: ModifierType;
@@ -23,6 +23,8 @@ export interface Item {
   hiddenModifiers: ItemModifier[];
   revealedModifiers: ItemModifier[];
   icon: string;
+  // Battery-specific
+  batteryCapacity?: number;
 }
 
 export interface InventoryItem extends Item {
@@ -45,6 +47,13 @@ export interface DroppedItem {
   y: number;
 }
 
+// Wall obstacle - impassable junk debris
+export interface WallTile {
+  x: number;
+  y: number;
+  icon: string;
+}
+
 export interface Junkyard {
   yardId: string;
   seed: number;
@@ -52,6 +61,7 @@ export interface Junkyard {
   height: number;
   revealedTiles: boolean[][];
   piles: JunkPile[];
+  walls: WallTile[];
   droppedItems: DroppedItem[];
 }
 
@@ -97,6 +107,12 @@ export interface BaseUpgrades {
   controlCapacity: number;
 }
 
+// Battery state - equipped battery determines max charge
+export interface BatteryState {
+  currentCharge: number;
+  equippedBatteryId: string | null; // ID of battery item from stash, null = starter battery
+}
+
 export interface PlayerState {
   currency: number;
   bag: Bag;
@@ -107,6 +123,7 @@ export interface PlayerState {
   cleaningJobs: CleaningJob[];
   playerX: number;
   playerY: number;
+  battery: BatteryState;
 }
 
 export interface GameState {
@@ -114,3 +131,6 @@ export interface GameState {
   junkyard: Junkyard | null;
   turnCount: number;
 }
+
+// Constants
+export const STARTER_BATTERY_CAPACITY = 20;
