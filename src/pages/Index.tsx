@@ -32,6 +32,8 @@ const Index = () => {
     purchaseUpgrade,
     installComponent,
     removeComponent,
+    craftItem,
+    buildFrame,
     getMaxBattery,
     resetGame,
   } = useGameState();
@@ -162,6 +164,8 @@ const Index = () => {
             onClose={() => setCurrentScreen('base')}
             onInstallComponent={installComponent}
             onRemoveComponent={removeComponent}
+            onCraftItem={craftItem}
+            onBuildFrame={buildFrame}
           />
         )}
       </AnimatePresence>
