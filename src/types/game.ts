@@ -60,6 +60,22 @@ export interface WallTile {
   icon: string;
 }
 
+// Terrain hazard types
+export type TerrainType = 
+  | 'mud'           // Costs 2 battery (treads ignore)
+  | 'toxic'         // Damages item condition when crossed
+  | 'oil'           // Slide 1 extra tile in movement direction
+  | 'electric'      // Drains 3 battery (insulated ignores)
+  | 'magnetic'      // Heavy items weigh 2x while inside
+  | 'fog';          // Reduces reveal radius to 1
+
+export interface TerrainTile {
+  x: number;
+  y: number;
+  type: TerrainType;
+  icon: string;
+}
+
 export interface Junkyard {
   yardId: string;
   seed: number;
@@ -68,6 +84,7 @@ export interface Junkyard {
   revealedTiles: boolean[][];
   piles: JunkPile[];
   walls: WallTile[];
+  terrain: TerrainTile[];
   droppedItems: DroppedItem[];
 }
 
