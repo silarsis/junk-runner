@@ -140,6 +140,7 @@ function generatePiles(
         x,
         y,
         progressTurns: 0,
+        requiredTurns: 1 + Math.floor(random() * 5), // Random 1-5 turns
         isDepleted: false,
       });
     }

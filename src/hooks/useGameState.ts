@@ -31,7 +31,6 @@ import { HELPER_FRAMES, UPGRADES } from '@/data/upgradeData';
 import { CraftingRecipe, hasIngredients } from '@/data/craftingRecipes';
 
 const STORAGE_KEY = 'junkrunner_save';
-const SEARCH_TURNS_REQUIRED = 5;
 const REVEAL_RADIUS = 2;
 
 function createPrimaryHelper(): HelperRobot {
@@ -244,7 +243,10 @@ export function useGameState() {
   const [isLoading, setIsLoading] = useState(true);
   // Runtime bag state (not persisted directly, derived from helper)
   const [bagItems, setBagItems] = useState<InventoryItem[]>([]);
-
+  // Found items for alert display
+  const [foundItems, setFoundItems] = useState<Item[]>([]);
+  // Last terrain stepped on for notification
+  const [lastTerrainType, setLastTerrainType] = useState<TerrainTile | null>(null);
   // Load game state
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -389,6 +391,14 @@ export function useGameState() {
           parsed.junkyardSeed = parsed.junkyard?.seed ?? Date.now();
         }
 
+        // Migration: ensure junkyard piles have requiredTurns
+        if (parsed.junkyard?.piles) {
+          parsed.junkyard.piles = parsed.junkyard.piles.map((pile: JunkPile) => ({
+            ...pile,
+            requiredTurns: pile.requiredTurns ?? (1 + Math.floor(Math.random() * 5)),
+          }));
+        }
+
         setGameState(parsed);
       } catch (err) {
         console.error('Failed to load save; resetting to fresh state.', err);
@@ -523,7 +533,11 @@ export function useGameState() {
       // Apply terrain effects
       if (destinationTerrain && movementType !== 'jump') {
         // Jump jets skip over hazards entirely
+        // Set terrain for notification
+        setLastTerrainType(destinationTerrain);
+        
         switch (destinationTerrain.type) {
+          // Legacy/Generic terrains
           case 'mud':
             // Costs 2 battery unless you have treads
             if (!mobilityName.includes('tread')) {
@@ -542,13 +556,15 @@ export function useGameState() {
             batteryCost = 3;
             break;
           case 'oil':
+          case 'oil_slick':
             // Slide effect handled separately after move
-            // Racing wheels slide further (handled in slide logic)
             break;
           case 'magnetic':
+          case 'magnetic_floor':
             // Weight penalty handled elsewhere (inventory checks)
             break;
           case 'fog':
+          case 'cooling_fog':
             // Reduced reveal radius - reveal only 1 tile around
             const newRevealed = updatedJunkyard.revealedTiles.map(row => [...row]);
             for (let ddy = -1; ddy <= 1; ddy++) {
@@ -561,6 +577,60 @@ export function useGameState() {
               }
             }
             updatedJunkyard = { ...updatedJunkyard, revealedTiles: newRevealed };
+            break;
+            
+          // Nuclear Exclusion Heap terrains
+          case 'irradiated':
+            // Future: radiation accumulation. For now, costs extra battery
+            batteryCost = 2;
+            break;
+          case 'cooling_trench':
+            // Slows movement, costs 2 battery
+            batteryCost = 2;
+            break;
+          case 'cratered':
+            // No effect, just visual
+            break;
+            
+          // Neon Slum Electronics Yard terrains
+          case 'cable_sprawl':
+            // Movement hindered without cable-cutter
+            if (!mobilityName.includes('cable')) {
+              batteryCost = 2;
+            }
+            break;
+          case 'broken_pavement':
+            // No effect
+            break;
+          case 'neon_pool':
+            // Electric interference, drains battery
+            batteryCost = 2;
+            break;
+            
+          // Industrial Corpse Zone terrains
+          case 'assembly_line':
+            // No effect currently
+            break;
+          case 'collapsed_catwalk':
+            // Careful navigation required
+            batteryCost = 2;
+            break;
+            
+          // Black Market Bio-Waste Fields terrains
+          case 'organic_sludge':
+            // Slow viscous ground
+            batteryCost = 2;
+            break;
+          case 'flesh_mound':
+            // Higher loot density - no movement effect
+            break;
+          case 'drainage':
+            // Narrow walkways - no effect
+            break;
+            
+          // Cloudfall Data Graveyard terrains
+          case 'server_rack':
+            // Narrow paths - no effect
             break;
         }
       }
@@ -663,7 +733,7 @@ export function useGameState() {
       
       const updatedPiles = [...prev.junkyard.piles];
       
-      if (newProgress >= SEARCH_TURNS_REQUIRED) {
+      if (newProgress >= pile.requiredTurns) {
         // Generate loot
         const loot = generateLoot(Date.now() + pileIndex);
         updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress, isDepleted: true };
@@ -674,8 +744,9 @@ export function useGameState() {
         
         // Try to add items to bag
         let newBagItems = [...bagItems];
-        const currentWeight = newBagItems.reduce((sum, i) => sum + i.weight, 0);
+        let currentWeight = newBagItems.reduce((sum, i) => sum + i.weight, 0);
         const bag = { ...baseBag, items: newBagItems };
+        const collectedItems: Item[] = [];
         
         for (const item of loot) {
           if (currentWeight + item.weight <= bag.maxWeight) {
@@ -689,11 +760,14 @@ export function useGameState() {
               };
               newBagItems.push(invItem);
               bag.items = newBagItems;
+              currentWeight += item.weight;
+              collectedItems.push(item);
             }
           }
         }
         
         setBagItems(newBagItems);
+        setFoundItems(collectedItems);
         
         const newTurnCount = prev.turnCount + 1;
         let newCharge = prev.player.currentCharge - 1;
@@ -1307,6 +1381,10 @@ export function useGameState() {
     gameState,
     isLoading,
     bagItems,
+    foundItems,
+    setFoundItems,
+    lastTerrainType,
+    setLastTerrainType,
     getCurrentBag,
     enterJunkyard,
     movePlayer,
