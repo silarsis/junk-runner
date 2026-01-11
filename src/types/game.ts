@@ -30,7 +30,7 @@ export interface Item {
   storageHeight?: number;
   storageMaxWeight?: number;
   // Mobility-specific
-  movementType?: 'basic' | 'diagonal' | 'jump';
+  movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
 }
 
 export interface InventoryItem extends Item {

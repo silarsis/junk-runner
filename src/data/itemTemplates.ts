@@ -14,7 +14,7 @@ interface ItemTemplate {
   storageWidth?: number;
   storageHeight?: number;
   storageMaxWeight?: number;
-  movementType?: 'basic' | 'diagonal' | 'jump';
+  movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
 }
 
 export const ITEM_TEMPLATES: ItemTemplate[] = [
@@ -46,6 +46,7 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   
   // Mobility Modules - findable in junkyard
   { name: 'Salvaged Wheels', category: 'mobility', rarity: 'uncommon', sizeW: 2, sizeH: 1, weight: 4, baseValue: 70, icon: '🛞', movementType: 'basic' },
+  { name: 'Racing Wheels', category: 'mobility', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 3, baseValue: 160, icon: '🏎️', movementType: 'extended' },
   { name: 'All-Terrain Treads', category: 'mobility', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 6, baseValue: 140, icon: '⛓️', movementType: 'basic' },
   { name: 'Spider Legs', category: 'mobility', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 5, baseValue: 280, icon: '🕷️', movementType: 'diagonal' },
   { name: 'Jump Jets', category: 'mobility', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 3, baseValue: 450, icon: '🚀', movementType: 'jump' },

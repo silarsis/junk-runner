@@ -5,7 +5,7 @@ import { GameState, JunkPile, Bag, HelperRobot } from '@/types/game';
 import { isTilePassable, getWallAt } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
 
-type MovementType = 'basic' | 'diagonal' | 'jump';
+type MovementType = 'basic' | 'diagonal' | 'jump' | 'extended';
 
 interface JunkyardScreenProps {
   gameState: GameState;
@@ -37,6 +37,10 @@ function isValidMove(dx: number, dy: number, movementType: MovementType, junkyar
       // Only orthogonal (up/down/left/right), 1 tile
       return (absDx + absDy === 1) && (absDx <= 1 && absDy <= 1);
     
+    case 'extended':
+      // Only orthogonal (up/down/left/right), up to 2 tiles
+      return ((absDx === 0 && absDy >= 1 && absDy <= 2) || (absDy === 0 && absDx >= 1 && absDx <= 2));
+    
     case 'diagonal':
       // Orthogonal OR diagonal, 1 tile
       return (absDx <= 1 && absDy <= 1) && (absDx + absDy >= 1);
@@ -60,7 +64,7 @@ function getValidMoveTargets(
   const validTargets = new Set<string>();
   if (!junkyard) return validTargets;
   
-  const range = movementType === 'jump' ? 2 : 1;
+  const range = (movementType === 'jump' || movementType === 'extended') ? 2 : 1;
   
   for (let dy = -range; dy <= range; dy++) {
     for (let dx = -range; dx <= range; dx++) {
@@ -337,6 +341,7 @@ export function JunkyardScreen({
         </div>
         <p className="text-xs text-muted-foreground text-center mt-2">
           {movementType === 'basic' && 'Tap adjacent tiles to move (↑↓←→)'}
+          {movementType === 'extended' && 'Move up to 2 tiles orthogonally (↑↓←→)'}
           {movementType === 'diagonal' && 'Move in any direction including diagonals'}
           {movementType === 'jump' && 'Jump up to 2 tiles in any direction'}
           {' • Each action uses 1 battery'}
