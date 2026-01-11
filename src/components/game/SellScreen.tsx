@@ -7,6 +7,7 @@ import { cn } from '@/lib/utils';
 interface SellScreenProps {
   stash: Item[];
   onSell: (itemId: string) => void;
+  onSellMultiple?: (itemIds: string[]) => void;
   onClose: () => void;
 }
 
@@ -20,7 +21,7 @@ function calculateSellPrice(item: Item): number {
   return Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult);
 }
 
-export function SellScreen({ stash, onSell, onClose }: SellScreenProps) {
+export function SellScreen({ stash, onSell, onSellMultiple, onClose }: SellScreenProps) {
   const getRarityClass = (rarity: string) => {
     switch (rarity) {
       case 'uncommon': return 'rarity-uncommon';
@@ -46,7 +47,12 @@ export function SellScreen({ stash, onSell, onClose }: SellScreenProps) {
   const junkValue = junkItems.reduce((sum, item) => sum + calculateSellPrice(item), 0);
 
   const handleSellAllJunk = () => {
-    junkItems.forEach(item => onSell(item.id));
+    if (onSellMultiple) {
+      onSellMultiple(junkItems.map(item => item.id));
+    } else {
+      // Fallback: sell one at a time (can cause issues with many items)
+      junkItems.forEach(item => onSell(item.id));
+    }
   };
 
   return (

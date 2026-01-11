@@ -27,6 +27,7 @@ const Index = () => {
     startCleaning,
     collectCleanedItem,
     sellItem,
+    sellMultipleItems,
     transferToStash,
     purchaseUpgrade,
     installComponent,
@@ -136,6 +137,7 @@ const Index = () => {
             key="sell"
             stash={gameState.player.stash}
             onSell={sellItem}
+            onSellMultiple={sellMultipleItems}
             onClose={() => setCurrentScreen('base')}
           />
         )}
