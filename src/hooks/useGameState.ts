@@ -640,6 +640,79 @@ export function useGameState() {
     });
   }, []);
 
+  // Install a module from stash to a helper's slot
+  const installModule = useCallback((helperId: string, slotIndex: number, item: Item) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const helperIndex = prev.player.helpers.findIndex(h => h.id === helperId);
+      if (helperIndex === -1) return prev;
+      
+      const helper = prev.player.helpers[helperIndex];
+      const frame = require('@/data/upgradeData').HELPER_FRAMES[helper.frameId];
+      
+      // Check if slot is valid
+      if (slotIndex < 0 || slotIndex >= frame.moduleSlots) return prev;
+      
+      // Check if item exists in stash and is a module
+      const itemInStash = prev.player.stash.find(i => i.id === item.id);
+      if (!itemInStash || itemInStash.category !== 'module') return prev;
+      
+      // Create new modules array
+      const newModules = [...helper.modules];
+      newModules[slotIndex] = item;
+      
+      // Update helper
+      const newHelpers = [...prev.player.helpers];
+      newHelpers[helperIndex] = { ...helper, modules: newModules };
+      
+      // Remove from stash
+      const newStash = prev.player.stash.filter(i => i.id !== item.id);
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          helpers: newHelpers,
+          stash: newStash,
+        },
+      };
+    });
+  }, []);
+
+  // Remove a module from a helper's slot and return to stash
+  const removeModule = useCallback((helperId: string, slotIndex: number) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const helperIndex = prev.player.helpers.findIndex(h => h.id === helperId);
+      if (helperIndex === -1) return prev;
+      
+      const helper = prev.player.helpers[helperIndex];
+      const module = helper.modules[slotIndex];
+      
+      if (!module) return prev;
+      
+      // Create new modules array without the module
+      const newModules = [...helper.modules];
+      newModules[slotIndex] = undefined as any;
+      
+      // Update helper
+      const newHelpers = [...prev.player.helpers];
+      newHelpers[helperIndex] = { ...helper, modules: newModules.filter(Boolean) };
+      
+      // Add back to stash
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          helpers: newHelpers,
+          stash: [...prev.player.stash, module],
+        },
+      };
+    });
+  }, []);
+
   // Computed values
   const getMaxBattery = useCallback(() => {
     if (!gameState) return STARTER_BATTERY_CAPACITY;
@@ -663,6 +736,8 @@ export function useGameState() {
     equipBattery,
     purchaseBattery,
     getMaxBattery,
+    installModule,
+    removeModule,
     resetGame,
   };
 }
