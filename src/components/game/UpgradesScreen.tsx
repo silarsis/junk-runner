@@ -42,7 +42,7 @@ export function UpgradesScreen({
       <main className="flex-1 p-4 overflow-y-auto">
         <div className="space-y-3">
           {Object.values(UPGRADES).map((upgrade, index) => {
-            const currentLevel = upgrades[upgrade.id as keyof BaseUpgrades] as number;
+            const currentLevel = (upgrades[upgrade.id as keyof BaseUpgrades] ?? 0) as number;
             const isMaxed = currentLevel >= upgrade.maxLevel;
             const cost = isMaxed ? 0 : upgrade.getCost(currentLevel);
             const canAfford = currency >= cost;
