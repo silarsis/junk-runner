@@ -47,7 +47,7 @@ export function BaseScreen({
   
   // Calculate charging cost
   const chargeNeeded = maxBattery - player.currentCharge;
-  const costPerUnit = UPGRADES.chargerEfficiency.getValue(player.baseUpgrades.chargerEfficiency);
+  const costPerUnit = UPGRADES.chargerEfficiency.getValue(player.baseUpgrades.chargerEfficiency ?? 0);
   const chargingCost = Math.ceil(chargeNeeded * costPerUnit);
   const canAffordFullCharge = player.currency >= chargingCost;
   const needsCharge = chargeNeeded > 0;
