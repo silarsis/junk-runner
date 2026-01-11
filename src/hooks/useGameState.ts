@@ -8,16 +8,18 @@ import {
   Item, 
   InventoryItem,
   CleaningJob,
-  Rarity 
+  Rarity,
+  STARTER_BATTERY_CAPACITY
 } from '@/types/game';
 import { 
   ITEM_TEMPLATES, 
   RARITY_WEIGHTS, 
-  getCleaningDuration 
+  getCleaningDuration,
+  SHOP_BATTERIES
 } from '@/data/itemTemplates';
+import { generateJunkyard, isTilePassable } from '@/lib/terrainGenerator';
 
 const STORAGE_KEY = 'junkrunner_save';
-const JUNKYARD_SIZE = 12;
 const SEARCH_TURNS_REQUIRED = 5;
 const REVEAL_RADIUS = 2;
 
@@ -45,6 +47,10 @@ function createInitialPlayerState(): PlayerState {
     cleaningJobs: [],
     playerX: 0,
     playerY: 0,
+    battery: {
+      currentCharge: STARTER_BATTERY_CAPACITY,
+      equippedBatteryId: null,
+    },
   };
 }
 
@@ -52,53 +58,6 @@ function seededRandom(seed: number): () => number {
   return function() {
     seed = (seed * 1103515245 + 12345) & 0x7fffffff;
     return seed / 0x7fffffff;
-  };
-}
-
-function generateJunkyard(seed: number): Junkyard {
-  const random = seededRandom(seed);
-  const width = JUNKYARD_SIZE;
-  const height = JUNKYARD_SIZE;
-  
-  const revealedTiles: boolean[][] = Array(height).fill(null).map(() => 
-    Array(width).fill(false)
-  );
-  
-  // Generate piles
-  const pileCount = 15 + Math.floor(random() * 10);
-  const piles: JunkPile[] = [];
-  const usedPositions = new Set<string>();
-  usedPositions.add('0,0'); // Don't place pile at spawn
-  
-  for (let i = 0; i < pileCount; i++) {
-    let x, y;
-    let attempts = 0;
-    do {
-      x = Math.floor(random() * width);
-      y = Math.floor(random() * height);
-      attempts++;
-    } while (usedPositions.has(`${x},${y}`) && attempts < 50);
-    
-    if (attempts < 50) {
-      usedPositions.add(`${x},${y}`);
-      piles.push({
-        id: uuidv4(),
-        x,
-        y,
-        progressTurns: 0,
-        isDepleted: false,
-      });
-    }
-  }
-  
-  return {
-    yardId: uuidv4(),
-    seed,
-    width,
-    height,
-    revealedTiles,
-    piles,
-    droppedItems: [],
   };
 }
 
@@ -155,6 +114,7 @@ function generateLoot(seed: number): Item[] {
       hiddenModifiers: [],
       revealedModifiers: [],
       icon: template.icon,
+      batteryCapacity: template.batteryCapacity,
     });
   }
   
@@ -210,6 +170,20 @@ function findFreeSlot(bag: { width: number; height: number; items: InventoryItem
   return null;
 }
 
+// Get the max battery capacity based on equipped battery
+function getMaxBatteryCapacity(player: PlayerState): number {
+  if (!player.battery.equippedBatteryId) {
+    return STARTER_BATTERY_CAPACITY;
+  }
+  
+  const battery = player.stash.find(i => i.id === player.battery.equippedBatteryId);
+  if (battery && battery.batteryCapacity) {
+    return battery.batteryCapacity;
+  }
+  
+  return STARTER_BATTERY_CAPACITY;
+}
+
 export function useGameState() {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -220,6 +194,17 @@ export function useGameState() {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
+        // Migration: add battery if missing
+        if (!parsed.player.battery) {
+          parsed.player.battery = {
+            currentCharge: STARTER_BATTERY_CAPACITY,
+            equippedBatteryId: null,
+          };
+        }
+        // Migration: add walls if missing
+        if (parsed.junkyard && !parsed.junkyard.walls) {
+          parsed.junkyard.walls = [];
+        }
         setGameState(parsed);
       } catch {
         setGameState({
@@ -277,7 +262,13 @@ export function useGameState() {
       const newX = prev.player.playerX + dx;
       const newY = prev.player.playerY + dy;
       
-      if (newX < 0 || newX >= prev.junkyard.width || newY < 0 || newY >= prev.junkyard.height) {
+      // Check bounds and walls
+      if (!isTilePassable(prev.junkyard, newX, newY)) {
+        return prev;
+      }
+      
+      // Check battery
+      if (prev.player.battery.currentCharge <= 0) {
         return prev;
       }
       
@@ -286,7 +277,15 @@ export function useGameState() {
       return {
         ...prev,
         junkyard,
-        player: { ...prev.player, playerX: newX, playerY: newY },
+        player: { 
+          ...prev.player, 
+          playerX: newX, 
+          playerY: newY,
+          battery: {
+            ...prev.player.battery,
+            currentCharge: prev.player.battery.currentCharge - 1,
+          },
+        },
         turnCount: prev.turnCount + 1,
       };
     });
@@ -306,6 +305,11 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev || !prev.junkyard) return prev;
       
+      // Check battery
+      if (prev.player.battery.currentCharge <= 0) {
+        return prev;
+      }
+      
       const pileIndex = prev.junkyard.piles.findIndex(
         p => p.x === prev.player.playerX && 
              p.y === prev.player.playerY && 
@@ -318,6 +322,12 @@ export function useGameState() {
       const newProgress = pile.progressTurns + 1;
       
       const updatedPiles = [...prev.junkyard.piles];
+      
+      // Drain battery for search action
+      const newBattery = {
+        ...prev.player.battery,
+        currentCharge: prev.player.battery.currentCharge - 1,
+      };
       
       if (newProgress >= SEARCH_TURNS_REQUIRED) {
         // Generate loot
@@ -346,7 +356,7 @@ export function useGameState() {
         return {
           ...prev,
           junkyard: { ...prev.junkyard, piles: updatedPiles },
-          player: { ...prev.player, bag },
+          player: { ...prev.player, bag, battery: newBattery },
           turnCount: prev.turnCount + 1,
         };
       } else {
@@ -354,6 +364,7 @@ export function useGameState() {
         return {
           ...prev,
           junkyard: { ...prev.junkyard, piles: updatedPiles },
+          player: { ...prev.player, battery: newBattery },
           turnCount: prev.turnCount + 1,
         };
       }
@@ -363,9 +374,20 @@ export function useGameState() {
   const returnToBase = useCallback(() => {
     setGameState(prev => {
       if (!prev) return prev;
+      
+      // Recharge battery when returning to base
+      const maxCapacity = getMaxBatteryCapacity(prev.player);
+      
       return {
         ...prev,
-        player: { ...prev.player, currentYardId: null },
+        player: { 
+          ...prev.player, 
+          currentYardId: null,
+          battery: {
+            ...prev.player.battery,
+            currentCharge: maxCapacity,
+          },
+        },
       };
     });
   }, []);
@@ -461,6 +483,9 @@ export function useGameState() {
       const item = prev.player.stash.find(i => i.id === itemId);
       if (!item) return prev;
       
+      // Don't allow selling equipped battery
+      if (item.id === prev.player.battery.equippedBatteryId) return prev;
+      
       const rarityMult: Record<Rarity, number> = {
         common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
       };
@@ -538,6 +563,74 @@ export function useGameState() {
     });
   }, []);
 
+  const equipBattery = useCallback((batteryId: string | null) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      if (batteryId) {
+        const battery = prev.player.stash.find(i => i.id === batteryId);
+        if (!battery || battery.category !== 'battery') return prev;
+      }
+      
+      // Get the capacity of the new battery
+      let newCapacity = STARTER_BATTERY_CAPACITY;
+      if (batteryId) {
+        const battery = prev.player.stash.find(i => i.id === batteryId);
+        if (battery?.batteryCapacity) {
+          newCapacity = battery.batteryCapacity;
+        }
+      }
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          battery: {
+            equippedBatteryId: batteryId,
+            currentCharge: newCapacity,
+          },
+        },
+      };
+    });
+  }, []);
+
+  const purchaseBattery = useCallback((templateIndex: number) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const template = SHOP_BATTERIES[templateIndex];
+      if (!template) return prev;
+      
+      if (prev.player.currency < template.baseValue) return prev;
+      
+      const newBattery: Item = {
+        id: uuidv4(),
+        name: template.name,
+        category: template.category,
+        rarity: template.rarity,
+        condition: 100,
+        isDirty: false,
+        sizeW: template.sizeW,
+        sizeH: template.sizeH,
+        weight: template.weight,
+        baseValue: template.baseValue,
+        hiddenModifiers: [],
+        revealedModifiers: [],
+        icon: template.icon,
+        batteryCapacity: template.batteryCapacity,
+      };
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          currency: prev.player.currency - template.baseValue,
+          stash: [...prev.player.stash, newBattery],
+        },
+      };
+    });
+  }, []);
+
   const resetGame = useCallback(() => {
     localStorage.removeItem(STORAGE_KEY);
     setGameState({
@@ -546,6 +639,12 @@ export function useGameState() {
       turnCount: 0,
     });
   }, []);
+
+  // Computed values
+  const getMaxBattery = useCallback(() => {
+    if (!gameState) return STARTER_BATTERY_CAPACITY;
+    return getMaxBatteryCapacity(gameState.player);
+  }, [gameState]);
 
   return {
     gameState,
@@ -561,6 +660,9 @@ export function useGameState() {
     sellItem,
     transferToStash,
     purchaseUpgrade,
+    equipBattery,
+    purchaseBattery,
+    getMaxBattery,
     resetGame,
   };
 }

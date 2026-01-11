@@ -9,6 +9,7 @@ interface ItemTemplate {
   weight: number;
   baseValue: number;
   icon: string;
+  batteryCapacity?: number;
 }
 
 export const ITEM_TEMPLATES: ItemTemplate[] = [
@@ -27,6 +28,12 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Quantum Chip', category: 'component', rarity: 'epic', sizeW: 1, sizeH: 1, weight: 1, baseValue: 200, icon: '💠' },
   { name: 'Fusion Core', category: 'component', rarity: 'legendary', sizeW: 2, sizeH: 2, weight: 4, baseValue: 500, icon: '⚡' },
   
+  // Batteries - findable in junkyard
+  { name: 'Salvaged Battery', category: 'battery', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 60, icon: '🔋', batteryCapacity: 25 },
+  { name: 'Industrial Battery', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 5, baseValue: 120, icon: '🔋', batteryCapacity: 35 },
+  { name: 'High-Capacity Cell', category: 'battery', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 4, baseValue: 250, icon: '⚡', batteryCapacity: 50 },
+  { name: 'Quantum Battery', category: 'battery', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 2, baseValue: 500, icon: '💎', batteryCapacity: 75 },
+  
   // Modules
   { name: 'Carry Pod', category: 'module', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 100, icon: '📦' },
   { name: 'Scanner Array', category: 'module', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 150, icon: '📡' },
@@ -40,6 +47,16 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Vintage Radio', category: 'junk', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 5, baseValue: 20, icon: '📻' },
   { name: 'Old Camera', category: 'junk', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 45, icon: '📷' },
 ];
+
+// Batteries available for purchase at base
+export const SHOP_BATTERIES: ItemTemplate[] = [
+  { name: 'Basic Battery Pack', category: 'battery', rarity: 'common', sizeW: 1, sizeH: 2, weight: 3, baseValue: 80, icon: '🔋', batteryCapacity: 25 },
+  { name: 'Enhanced Battery', category: 'battery', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 150, icon: '🔋', batteryCapacity: 35 },
+  { name: 'Pro Battery Module', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 4, baseValue: 300, icon: '⚡', batteryCapacity: 50 },
+];
+
+// Wall obstacle icons - random impassable debris
+export const WALL_ICONS = ['🪨', '🧱', '🚗', '🛢️', '📦', '🗑️', '🚧', '⬛'];
 
 export const RARITY_WEIGHTS: Record<Rarity, number> = {
   common: 50,

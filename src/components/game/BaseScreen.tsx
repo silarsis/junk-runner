@@ -1,26 +1,31 @@
 import { motion } from 'framer-motion';
-import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2 } from 'lucide-react';
+import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2, Battery } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState } from '@/types/game';
+import { GameState, STARTER_BATTERY_CAPACITY } from '@/types/game';
+import { cn } from '@/lib/utils';
 
 interface BaseScreenProps {
   gameState: GameState;
+  maxBattery: number;
   onEnterJunkyard: () => void;
   onOpenCleaning: () => void;
   onOpenSell: () => void;
   onOpenUpgrades: () => void;
   onOpenWorkshop: () => void;
+  onOpenBatteryShop: () => void;
   onMoveToNextJunkyard: () => void;
   onTransferToStash: () => void;
 }
 
 export function BaseScreen({
   gameState,
+  maxBattery,
   onEnterJunkyard,
   onOpenCleaning,
   onOpenSell,
   onOpenUpgrades,
   onOpenWorkshop,
+  onOpenBatteryShop,
   onMoveToNextJunkyard,
   onTransferToStash,
 }: BaseScreenProps) {
@@ -29,6 +34,10 @@ export function BaseScreen({
   const stashItemCount = player.stash.length;
   const cleaningCount = player.cleaningJobs.length;
   const activeJunkyard = gameState.junkyard !== null;
+  
+  const equippedBattery = player.battery.equippedBatteryId 
+    ? player.stash.find(i => i.id === player.battery.equippedBatteryId)
+    : null;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -46,35 +55,74 @@ export function BaseScreen({
       {/* Main Content */}
       <main className="flex-1 p-4 flex flex-col gap-4">
         {/* Status Cards */}
-        <div className="grid grid-cols-2 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <motion.div 
-            className="industrial-panel p-4 rounded-lg"
+            className="industrial-panel p-3 rounded-lg"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.1 }}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <Package className="w-5 h-5 text-primary" />
-              <span className="text-sm text-muted-foreground">Bag</span>
+            <div className="flex items-center gap-2 mb-1">
+              <Package className="w-4 h-4 text-primary" />
+              <span className="text-xs text-muted-foreground">Bag</span>
             </div>
-            <p className="text-2xl font-industrial text-foreground">{bagItemCount}</p>
-            <p className="text-xs text-muted-foreground">items</p>
+            <p className="text-xl font-industrial text-foreground">{bagItemCount}</p>
           </motion.div>
 
           <motion.div 
-            className="industrial-panel p-4 rounded-lg"
+            className="industrial-panel p-3 rounded-lg"
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: 0.15 }}
           >
-            <div className="flex items-center gap-2 mb-2">
-              <ShoppingBag className="w-5 h-5 text-primary" />
-              <span className="text-sm text-muted-foreground">Stash</span>
+            <div className="flex items-center gap-2 mb-1">
+              <ShoppingBag className="w-4 h-4 text-primary" />
+              <span className="text-xs text-muted-foreground">Stash</span>
             </div>
-            <p className="text-2xl font-industrial text-foreground">{stashItemCount}</p>
-            <p className="text-xs text-muted-foreground">items</p>
+            <p className="text-xl font-industrial text-foreground">{stashItemCount}</p>
+          </motion.div>
+
+          <motion.div 
+            className="industrial-panel p-3 rounded-lg"
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.2 }}
+          >
+            <div className="flex items-center gap-2 mb-1">
+              <Battery className="w-4 h-4 text-primary" />
+              <span className="text-xs text-muted-foreground">Battery</span>
+            </div>
+            <p className="text-xl font-industrial text-foreground">{maxBattery}</p>
           </motion.div>
         </div>
+
+        {/* Battery Status */}
+        <motion.div 
+          className="industrial-panel p-3 rounded-lg flex items-center justify-between"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25 }}
+        >
+          <div className="flex items-center gap-3">
+            <Battery className="w-5 h-5 text-primary" />
+            <div>
+              <p className="text-sm font-medium">
+                {equippedBattery ? equippedBattery.name : 'Starter Battery'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {player.battery.currentCharge}/{maxBattery} charge
+              </p>
+            </div>
+          </div>
+          <div className="w-24 h-3 bg-muted rounded-full overflow-hidden">
+            <motion.div
+              className="h-full bg-primary"
+              initial={{ width: 0 }}
+              animate={{ width: `${(player.battery.currentCharge / maxBattery) * 100}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+        </motion.div>
 
         {/* Transfer Button */}
         {bagItemCount > 0 && (
@@ -97,7 +145,7 @@ export function BaseScreen({
         <motion.div
           initial={{ opacity: 0, scale: 0.95 }}
           animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.2 }}
+          transition={{ delay: 0.3 }}
         >
           <Button
             variant="action"
@@ -115,51 +163,18 @@ export function BaseScreen({
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.25 }}
-          >
-            <Button
-              variant="nav"
-              className="w-full h-20 flex-col gap-1"
-              onClick={onOpenCleaning}
-            >
-              <Wrench className="w-6 h-6" />
-              <span>Cleaning</span>
-              {cleaningCount > 0 && (
-                <span className="text-xs text-primary">({cleaningCount} active)</span>
-              )}
-            </Button>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: 20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.3 }}
-          >
-            <Button
-              variant="nav"
-              className="w-full h-20 flex-col gap-1"
-              onClick={onOpenSell}
-            >
-              <Coins className="w-6 h-6" />
-              <span>Sell</span>
-              {stashItemCount > 0 && (
-                <span className="text-xs text-primary">({stashItemCount} items)</span>
-              )}
-            </Button>
-          </motion.div>
-
-          <motion.div
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.35 }}
           >
             <Button
               variant="nav"
-              className="w-full h-20 flex-col gap-1"
-              onClick={onOpenUpgrades}
+              className="w-full h-16 flex-col gap-1"
+              onClick={onOpenCleaning}
             >
-              <ArrowUp className="w-6 h-6" />
-              <span>Upgrades</span>
+              <Wrench className="w-5 h-5" />
+              <span className="text-xs">Cleaning</span>
+              {cleaningCount > 0 && (
+                <span className="text-[10px] text-primary">({cleaningCount})</span>
+              )}
             </Button>
           </motion.div>
 
@@ -170,11 +185,59 @@ export function BaseScreen({
           >
             <Button
               variant="nav"
-              className="w-full h-20 flex-col gap-1"
+              className="w-full h-16 flex-col gap-1"
+              onClick={onOpenSell}
+            >
+              <Coins className="w-5 h-5" />
+              <span className="text-xs">Sell</span>
+              {stashItemCount > 0 && (
+                <span className="text-[10px] text-primary">({stashItemCount})</span>
+              )}
+            </Button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.45 }}
+          >
+            <Button
+              variant="nav"
+              className="w-full h-16 flex-col gap-1"
+              onClick={onOpenUpgrades}
+            >
+              <ArrowUp className="w-5 h-5" />
+              <span className="text-xs">Upgrades</span>
+            </Button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.5 }}
+          >
+            <Button
+              variant="nav"
+              className="w-full h-16 flex-col gap-1"
+              onClick={onOpenBatteryShop}
+            >
+              <Battery className="w-5 h-5" />
+              <span className="text-xs">Batteries</span>
+            </Button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.55 }}
+          >
+            <Button
+              variant="nav"
+              className="w-full h-16 flex-col gap-1"
               onClick={onOpenWorkshop}
             >
-              <Wrench className="w-6 h-6" />
-              <span>Workshop</span>
+              <Wrench className="w-5 h-5" />
+              <span className="text-xs">Workshop</span>
             </Button>
           </motion.div>
         </div>
@@ -184,7 +247,7 @@ export function BaseScreen({
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.45 }}
+            transition={{ delay: 0.6 }}
             className="mt-auto pt-4"
           >
             <Button
