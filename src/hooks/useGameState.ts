@@ -27,7 +27,7 @@ import {
   createBasicMobility,
 } from '@/data/itemTemplates';
 import { generateJunkyard, isTilePassable, getTerrainAt } from '@/lib/terrainGenerator';
-import { HELPER_FRAMES } from '@/data/upgradeData';
+import { HELPER_FRAMES, UPGRADES } from '@/data/upgradeData';
 
 const STORAGE_KEY = 'junkrunner_save';
 const SEARCH_TURNS_REQUIRED = 5;
@@ -57,6 +57,7 @@ function createInitialPlayerState(): PlayerState {
       cleaningSpeed: 0,
       workshopTier: 0,
       controlCapacity: 0,
+      chargerEfficiency: 0,
     },
     helpers: [createPrimaryHelper()],
     cleaningJobs: [],
@@ -563,13 +564,51 @@ export function useGameState() {
     });
   }, [bagItems]);
 
-  const returnToBase = useCallback(() => {
+  // Calculate charging cost based on charger efficiency upgrade
+  const getChargingCost = useCallback((chargeNeeded: number, chargerLevel: number): number => {
+    const costPerUnit = UPGRADES.chargerEfficiency.getValue(chargerLevel);
+    return Math.ceil(chargeNeeded * costPerUnit);
+  }, []);
+
+  const returnToBase = useCallback((shouldRecharge: boolean = false) => {
     setGameState(prev => {
       if (!prev) return prev;
       
-      // Recharge battery when returning to base
       const primary = getPrimaryHelper(prev.player);
       const maxCapacity = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
+      
+      if (!shouldRecharge) {
+        // Just return without recharging
+        return {
+          ...prev,
+          player: { 
+            ...prev.player, 
+            currentYardId: null,
+          },
+        };
+      }
+      
+      // Calculate recharge cost
+      const chargeNeeded = maxCapacity - prev.player.currentCharge;
+      const chargingCost = getChargingCost(chargeNeeded, prev.player.baseUpgrades.chargerEfficiency);
+      
+      // Check if player can afford it
+      if (prev.player.currency < chargingCost) {
+        // Can't afford full recharge - charge as much as possible
+        const affordableCharge = Math.floor(prev.player.currency / UPGRADES.chargerEfficiency.getValue(prev.player.baseUpgrades.chargerEfficiency));
+        const actualCharge = Math.min(affordableCharge, chargeNeeded);
+        const actualCost = getChargingCost(actualCharge, prev.player.baseUpgrades.chargerEfficiency);
+        
+        return {
+          ...prev,
+          player: { 
+            ...prev.player, 
+            currentYardId: null,
+            currentCharge: prev.player.currentCharge + actualCharge,
+            currency: prev.player.currency - actualCost,
+          },
+        };
+      }
       
       return {
         ...prev,
@@ -577,10 +616,11 @@ export function useGameState() {
           ...prev.player, 
           currentYardId: null,
           currentCharge: maxCapacity,
+          currency: prev.player.currency - chargingCost,
         },
       };
     });
-  }, []);
+  }, [getChargingCost]);
 
   const moveToNextJunkyard = useCallback(() => {
     setGameState(prev => {

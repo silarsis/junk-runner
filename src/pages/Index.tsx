@@ -53,8 +53,12 @@ const Index = () => {
   };
 
   const handleReturnToBase = () => {
-    returnToBase();
+    returnToBase(false); // Return without recharging
     setCurrentScreen('base');
+  };
+
+  const handleRecharge = () => {
+    returnToBase(true); // Recharge when at base
   };
 
   const handleMoveToNextJunkyard = () => {
@@ -86,6 +90,7 @@ const Index = () => {
             onOpenWorkshop={() => setCurrentScreen('workshop')}
             onMoveToNextJunkyard={handleMoveToNextJunkyard}
             onTransferToStash={transferToStash}
+            onRecharge={handleRecharge}
           />
         )}
 

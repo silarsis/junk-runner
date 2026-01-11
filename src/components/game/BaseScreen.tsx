@@ -1,7 +1,8 @@
 import { motion } from 'framer-motion';
-import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2, Battery, Bot } from 'lucide-react';
+import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2, Battery, Bot, Zap } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameState, Bag, BASIC_BATTERY_CAPACITY } from '@/types/game';
+import { UPGRADES } from '@/data/upgradeData';
 import { cn } from '@/lib/utils';
 
 interface BaseScreenProps {
@@ -16,6 +17,7 @@ interface BaseScreenProps {
   onOpenWorkshop: () => void;
   onMoveToNextJunkyard: () => void;
   onTransferToStash: () => void;
+  onRecharge: () => void;
 }
 
 export function BaseScreen({
@@ -30,6 +32,7 @@ export function BaseScreen({
   onOpenWorkshop,
   onMoveToNextJunkyard,
   onTransferToStash,
+  onRecharge,
 }: BaseScreenProps) {
   const { player } = gameState;
   const stashItemCount = player.stash.length;
@@ -41,6 +44,13 @@ export function BaseScreen({
   const helperBattery = primaryHelper?.components.battery;
   const helperStorage = primaryHelper?.components.modules.find(m => m?.category === 'storage');
   const helperMobility = primaryHelper?.components.mobility;
+  
+  // Calculate charging cost
+  const chargeNeeded = maxBattery - player.currentCharge;
+  const costPerUnit = UPGRADES.chargerEfficiency.getValue(player.baseUpgrades.chargerEfficiency);
+  const chargingCost = Math.ceil(chargeNeeded * costPerUnit);
+  const canAffordFullCharge = player.currency >= chargingCost;
+  const needsCharge = chargeNeeded > 0;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -141,7 +151,11 @@ export function BaseScreen({
             <span className="text-xs text-muted-foreground">Charge:</span>
             <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
               <motion.div
-                className="h-full bg-primary"
+                className={cn(
+                  "h-full",
+                  player.currentCharge < maxBattery * 0.25 ? "bg-destructive" : 
+                  player.currentCharge < maxBattery * 0.5 ? "bg-accent" : "bg-primary"
+                )}
                 initial={{ width: 0 }}
                 animate={{ width: `${(player.currentCharge / maxBattery) * 100}%` }}
                 transition={{ duration: 0.3 }}
@@ -149,6 +163,46 @@ export function BaseScreen({
             </div>
             <span className="text-xs font-mono">{player.currentCharge}/{maxBattery}</span>
           </div>
+          
+          {/* Recharge Button */}
+          {needsCharge && (
+            <motion.div
+              className="mt-3"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+            >
+              <Button
+                variant="steel"
+                className="w-full flex items-center justify-between"
+                onClick={onRecharge}
+                disabled={player.currency === 0}
+              >
+                <div className="flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-accent" />
+                  <span>Recharge Battery</span>
+                </div>
+                <div className="flex items-center gap-1">
+                  <span className={cn(
+                    "font-mono text-sm",
+                    !canAffordFullCharge && "text-destructive"
+                  )}>
+                    {chargingCost}
+                  </span>
+                  <Coins className="w-3 h-3 text-accent" />
+                  {costPerUnit < 1 && (
+                    <span className="text-xs text-primary ml-1">
+                      ({Math.round((1 - costPerUnit) * 100)}% off)
+                    </span>
+                  )}
+                </div>
+              </Button>
+              {!canAffordFullCharge && player.currency > 0 && (
+                <p className="text-xs text-muted-foreground text-center mt-1">
+                  Partial recharge available
+                </p>
+              )}
+            </motion.div>
+          )}
         </motion.div>
 
         {/* Transfer Button */}
