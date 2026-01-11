@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2, Battery, Bot, Zap } from 'lucide-react';
+import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2, Battery, Bot, Zap, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameState, Bag, BASIC_BATTERY_CAPACITY } from '@/types/game';
 import { UPGRADES } from '@/data/upgradeData';
@@ -18,6 +18,7 @@ interface BaseScreenProps {
   onMoveToNextJunkyard: () => void;
   onTransferToStash: () => void;
   onRecharge: () => void;
+  onResetSave: () => void;
 }
 
 export function BaseScreen({
@@ -33,6 +34,7 @@ export function BaseScreen({
   onMoveToNextJunkyard,
   onTransferToStash,
   onRecharge,
+  onResetSave,
 }: BaseScreenProps) {
   const { player } = gameState;
   const stashItemCount = player.stash.length;
@@ -326,6 +328,24 @@ export function BaseScreen({
             </Button>
           </motion.div>
         )}
+
+        {/* Reset Save Button */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.7 }}
+          className="mt-4 pt-4 border-t border-border"
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            className="w-full text-muted-foreground hover:text-destructive"
+            onClick={onResetSave}
+          >
+            <RotateCcw className="w-4 h-4" />
+            Reset Save Data
+          </Button>
+        </motion.div>
       </main>
     </div>
   );

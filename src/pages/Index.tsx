@@ -31,6 +31,7 @@ const Index = () => {
     installComponent,
     removeComponent,
     getMaxBattery,
+    resetGame,
   } = useGameState();
 
   const [currentScreen, setCurrentScreen] = useState<Screen>('base');
@@ -67,6 +68,12 @@ const Index = () => {
     }
   };
 
+  const handleResetSave = () => {
+    if (confirm('This will permanently delete all your progress and start fresh. Are you sure?')) {
+      resetGame();
+    }
+  };
+
   const currentPile = getCurrentPile();
   const maxCleaningSlots = 1 + gameState.player.baseUpgrades.cleaningSlots;
   const controlCapacity = 1 + gameState.player.baseUpgrades.controlCapacity;
@@ -91,6 +98,7 @@ const Index = () => {
             onMoveToNextJunkyard={handleMoveToNextJunkyard}
             onTransferToStash={transferToStash}
             onRecharge={handleRecharge}
+            onResetSave={handleResetSave}
           />
         )}
 
