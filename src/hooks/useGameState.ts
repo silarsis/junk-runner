@@ -267,6 +267,10 @@ export function useGameState() {
         if (parsed.junkyard && !parsed.junkyard.terrain) {
           parsed.junkyard.terrain = [];
         }
+        // Migration: ensure chargerEfficiency exists
+        if (parsed.player.baseUpgrades && parsed.player.baseUpgrades.chargerEfficiency === undefined) {
+          parsed.player.baseUpgrades.chargerEfficiency = 0;
+        }
         // Load bag items from storage
         if (parsed.bagItems) {
           setBagItems(parsed.bagItems);
@@ -648,14 +652,16 @@ export function useGameState() {
       
       // Calculate recharge cost
       const chargeNeeded = maxCapacity - prev.player.currentCharge;
-      const chargingCost = getChargingCost(chargeNeeded, prev.player.baseUpgrades.chargerEfficiency);
+      const chargerLevel = prev.player.baseUpgrades.chargerEfficiency ?? 0;
+      const chargingCost = getChargingCost(chargeNeeded, chargerLevel);
       
       // Check if player can afford it
       if (prev.player.currency < chargingCost) {
         // Can't afford full recharge - charge as much as possible
-        const affordableCharge = Math.floor(prev.player.currency / UPGRADES.chargerEfficiency.getValue(prev.player.baseUpgrades.chargerEfficiency));
+        const costPerUnit = UPGRADES.chargerEfficiency.getValue(chargerLevel);
+        const affordableCharge = Math.floor(prev.player.currency / costPerUnit);
         const actualCharge = Math.min(affordableCharge, chargeNeeded);
-        const actualCost = getChargingCost(actualCharge, prev.player.baseUpgrades.chargerEfficiency);
+        const actualCost = getChargingCost(actualCharge, chargerLevel);
         
         return {
           ...prev,
