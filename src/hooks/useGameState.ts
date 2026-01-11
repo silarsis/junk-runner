@@ -290,57 +290,103 @@ export function useGameState() {
           parsed.player.cleaningJobs = [];
         }
 
-        // Migration: ensure helpers exist and include a primary helper
-        if (!Array.isArray(parsed.player.helpers) || parsed.player.helpers.length === 0 || !parsed.player.helpers.some((h: HelperRobot) => h?.isPrimary)) {
+        const isRecord = (v: unknown): v is Record<string, unknown> =>
+          !!v && typeof v === 'object' && !Array.isArray(v);
+
+        const isFiniteNumber = (v: unknown): v is number =>
+          typeof v === 'number' && Number.isFinite(v);
+
+        const isValidItem = (v: unknown): v is Item => {
+          if (!isRecord(v)) return false;
+          return (
+            typeof v.id === 'string' &&
+            typeof v.name === 'string' &&
+            typeof v.icon === 'string' &&
+            typeof v.category === 'string' &&
+            typeof v.rarity === 'string' &&
+            isFiniteNumber(v.condition) &&
+            typeof v.isDirty === 'boolean' &&
+            isFiniteNumber(v.sizeW) &&
+            isFiniteNumber(v.sizeH) &&
+            isFiniteNumber(v.weight) &&
+            isFiniteNumber(v.baseValue)
+          );
+        };
+
+        const normalizeItemArrays = (item: Item) => {
+          const rec = item as unknown as Record<string, unknown>;
+          if (!Array.isArray(rec.hiddenModifiers)) rec.hiddenModifiers = [];
+          if (!Array.isArray(rec.revealedModifiers)) rec.revealedModifiers = [];
+        };
+
+        // Drop any corrupted stash entries (prevents UI crashes)
+        parsed.player.stash = (parsed.player.stash as unknown[]).filter(isValidItem);
+        (parsed.player.stash as Item[]).forEach(normalizeItemArrays);
+
+        const isValidCleaningJob = (v: unknown): v is CleaningJob => {
+          if (!isRecord(v)) return false;
+          return (
+            typeof v.jobId === 'string' &&
+            isRecord(v.item) &&
+            isValidItem(v.item) &&
+            isFiniteNumber(v.startTime) &&
+            isFiniteNumber(v.duration)
+          );
+        };
+
+        parsed.player.cleaningJobs = (parsed.player.cleaningJobs as unknown[]).filter(isValidCleaningJob);
+
+        // Migration: ensure helpers exist and include a valid primary helper
+        const isValidHelper = (h: unknown): h is HelperRobot => {
+          if (!isRecord(h)) return false;
+          return (
+            typeof h.id === 'string' &&
+            typeof h.frameId === 'string' &&
+            isRecord(h.components) &&
+            isRecord(h.components.mobility) &&
+            isRecord(h.components.battery) &&
+            Array.isArray(h.components.modules)
+          );
+        };
+
+        if (
+          !Array.isArray(parsed.player.helpers) ||
+          parsed.player.helpers.length === 0 ||
+          !(parsed.player.helpers as unknown[]).some((h) => isRecord(h) && (h as any).isPrimary)
+        ) {
           parsed.player.helpers = [createPrimaryHelper()];
         }
 
-        // Migration: ensure coordinates exist
-        if (typeof parsed.player.playerX !== 'number' || isNaN(parsed.player.playerX)) {
-          parsed.player.playerX = 0;
-        }
-        if (typeof parsed.player.playerY !== 'number' || isNaN(parsed.player.playerY)) {
-          parsed.player.playerY = 0;
-        }
-        if (parsed.player.currentYardId === undefined) {
-          parsed.player.currentYardId = null;
-        }
-
-        // Migration: ensure currentCharge exists
-        if (typeof parsed.player.currentCharge !== 'number' || isNaN(parsed.player.currentCharge)) {
-          const primary = (parsed.player.helpers as HelperRobot[]).find(h => h.isPrimary);
-          parsed.player.currentCharge = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
-        }
-
-        // Migration: ensure junkyard is either null or an object with required arrays
-        if (parsed.junkyard && typeof parsed.junkyard !== 'object') {
-          parsed.junkyard = null;
-        }
-        if (parsed.junkyard && !Array.isArray(parsed.junkyard.walls)) {
-          parsed.junkyard.walls = [];
-        }
-        if (parsed.junkyard && !Array.isArray(parsed.junkyard.terrain)) {
-          parsed.junkyard.terrain = [];
-        }
-
-        // Migration: ensure currency is a valid number
-        if (typeof parsed.player.currency !== 'number' || isNaN(parsed.player.currency)) {
-          parsed.player.currency = 50;
-        }
-
-        // Migration: ensure turnCount exists
-        if (typeof parsed.turnCount !== 'number' || isNaN(parsed.turnCount)) {
-          parsed.turnCount = 0;
+        const primary = (parsed.player.helpers as unknown[]).find((h) => isRecord(h) && (h as any).isPrimary);
+        if (!primary || !isValidHelper(primary)) {
+          parsed.player.helpers = [createPrimaryHelper()];
+        } else {
+          parsed.player.helpers = (parsed.player.helpers as unknown[]).filter(isValidHelper) as HelperRobot[];
         }
 
         // Load bag items from storage
         if (!Array.isArray(parsed.bagItems)) {
           parsed.bagItems = [];
         }
+
+        const isValidInventoryItem = (v: unknown): v is InventoryItem => {
+          if (!isValidItem(v)) return false;
+          const rec = v as unknown as Record<string, unknown>;
+          return (
+            isFiniteNumber(rec.gridX) &&
+            isFiniteNumber(rec.gridY) &&
+            typeof rec.rotated === 'boolean'
+          );
+        };
+
+        parsed.bagItems = (parsed.bagItems as unknown[]).filter(isValidInventoryItem);
+        (parsed.bagItems as InventoryItem[]).forEach(normalizeItemArrays);
         setBagItems(parsed.bagItems);
+
 
         setGameState(parsed);
       } catch (err) {
+        console.error('Failed to load save; resetting to fresh state.', err);
         // If the save is corrupted, clear it so the app can recover reliably.
         localStorage.removeItem(STORAGE_KEY);
         setBagItems([]);
