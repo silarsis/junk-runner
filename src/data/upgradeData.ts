@@ -113,4 +113,40 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     cost: 300,
     requiredComponents: ['Circuit Board', 'Power Cell'],
   },
+  hauler: {
+    id: 'hauler',
+    name: 'Hauler Frame',
+    slots: {
+      mobilitySlots: 1,
+      moduleSlots: 4,
+      batterySlots: 1,
+    },
+    icon: '🚛',
+    cost: 400,
+    requiredComponents: ['Motor Unit', 'Steel Plate', 'Titanium Scrap'],
+  },
+  explorer: {
+    id: 'explorer',
+    name: 'Explorer Frame',
+    slots: {
+      mobilitySlots: 2,
+      moduleSlots: 3,
+      batterySlots: 2,
+    },
+    icon: '🧭',
+    cost: 500,
+    requiredComponents: ['Quantum Chip', 'Circuit Board', 'Motor Unit'],
+  },
+  titan: {
+    id: 'titan',
+    name: 'Titan Frame',
+    slots: {
+      mobilitySlots: 2,
+      moduleSlots: 5,
+      batterySlots: 3,
+    },
+    icon: '🦾',
+    cost: 800,
+    requiredComponents: ['Fusion Core', 'Quantum Chip', 'Titanium Scrap'],
+  },
 };
