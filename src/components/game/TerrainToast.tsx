@@ -1,43 +1,52 @@
 import { TerrainType } from '@/types/game';
 import { toast } from '@/hooks/use-toast';
 
-// All terrain effects with descriptions
-export const TERRAIN_EFFECTS: Record<TerrainType, { name: string; icon: string; effect: string }> = {
+// Terrain effect configuration
+export interface TerrainEffectConfig {
+  name: string;
+  icon: string;
+  effect: string;
+  damagesMobility?: number; // Damage to mobility component
+  damagesFrame?: number; // Damage to frame (all components take minor damage)
+}
+
+// All terrain effects with descriptions and damage values
+export const TERRAIN_EFFECTS: Record<TerrainType, TerrainEffectConfig> = {
   // Legacy/Generic
   mud: { name: 'Mud', icon: '🟤', effect: 'Costs 2 battery (treads ignore)' },
-  toxic: { name: 'Toxic Waste', icon: '☣️', effect: 'Items damaged -5 condition' },
+  toxic: { name: 'Toxic Waste', icon: '☣️', effect: 'Items damaged -5 condition, mobility -3', damagesMobility: 3 },
   oil: { name: 'Oil Slick', icon: '🛢️', effect: 'Slid 1 tile further' },
-  electric: { name: 'Electric Hazard', icon: '⚡', effect: 'Drained 3 battery' },
+  electric: { name: 'Electric Hazard', icon: '⚡', effect: 'Drained 3 battery, mobility -5', damagesMobility: 5 },
   magnetic: { name: 'Magnetic Field', icon: '🧲', effect: 'Heavy items weigh 2x' },
   fog: { name: 'Dense Fog', icon: '🌫️', effect: 'Vision reduced to 1 tile' },
   
   // Nuclear Exclusion Heap
-  irradiated: { name: 'Irradiated Ground', icon: '☢️', effect: 'Radiation exposure +1' },
+  irradiated: { name: 'Irradiated Ground', icon: '☢️', effect: 'Radiation damage -5 to all components', damagesFrame: 5 },
   cooling_trench: { name: 'Cooling Trench', icon: '💧', effect: 'Movement slowed (2 battery)' },
   cratered: { name: 'Cratered Concrete', icon: '🕳️', effect: 'No effect' },
   
   // Neon Slum Electronics Yard
-  cable_sprawl: { name: 'Cable Sprawl', icon: '〰️', effect: 'Movement hindered (2 battery)' },
+  cable_sprawl: { name: 'Cable Sprawl', icon: '〰️', effect: 'Movement hindered (2 battery), mobility -2', damagesMobility: 2 },
   broken_pavement: { name: 'Broken Pavement', icon: '🔲', effect: 'No effect' },
-  neon_pool: { name: 'Neon Pool', icon: '💜', effect: 'Electric interference (2 battery)' },
+  neon_pool: { name: 'Neon Pool', icon: '💜', effect: 'Electric interference (2 battery), mobility -3', damagesMobility: 3 },
   
   // Industrial Corpse Zone
   oil_slick: { name: 'Oil-Slick Floor', icon: '🛢️', effect: 'Slipped! Extra movement' },
   assembly_line: { name: 'Assembly Line', icon: '⚙️', effect: 'No effect' },
-  collapsed_catwalk: { name: 'Collapsed Catwalk', icon: '🌉', effect: 'Careful navigation (2 battery)' },
+  collapsed_catwalk: { name: 'Collapsed Catwalk', icon: '🌉', effect: 'Careful navigation (2 battery), mobility -2', damagesMobility: 2 },
   
   // Black Market Bio-Waste Fields
-  organic_sludge: { name: 'Organic Sludge', icon: '🟢', effect: 'Slow movement (2 battery)' },
+  organic_sludge: { name: 'Organic Sludge', icon: '🟢', effect: 'Slow movement (2 battery), corrosion -3 mobility', damagesMobility: 3 },
   flesh_mound: { name: 'Flesh-Steel Mound', icon: '🫀', effect: 'No effect' },
   drainage: { name: 'Drainage Channel', icon: '🔳', effect: 'No effect' },
   
   // Cloudfall Data Graveyard
   cooling_fog: { name: 'Cooling Fog Zone', icon: '🌫️', effect: 'Vision reduced to 1 tile' },
   server_rack: { name: 'Server Rack', icon: '🖲️', effect: 'No effect' },
-  magnetic_floor: { name: 'Magnetic Floor', icon: '🧲', effect: 'Heavy items weigh 2x' },
+  magnetic_floor: { name: 'Magnetic Floor', icon: '🧲', effect: 'Heavy items weigh 2x, mobility strain -2', damagesMobility: 2 },
 };
 
-export function showTerrainToast(terrainType: TerrainType) {
+export function showTerrainToast(terrainType: TerrainType, extraMessage?: string) {
   const terrain = TERRAIN_EFFECTS[terrainType];
   if (!terrain) return;
   
@@ -48,9 +57,11 @@ export function showTerrainToast(terrainType: TerrainType) {
   
   if (noEffectTerrains.includes(terrainType)) return;
   
+  const description = extraMessage ? `${terrain.effect}. ${extraMessage}` : terrain.effect;
+  
   toast({
     title: `${terrain.icon} ${terrain.name}`,
-    description: terrain.effect,
-    duration: 2000,
+    description,
+    duration: 2500,
   });
 }

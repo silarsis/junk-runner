@@ -29,9 +29,13 @@ import {
 import { generateJunkyard, isTilePassable, getTerrainAt } from '@/lib/terrainGenerator';
 import { HELPER_FRAMES, UPGRADES } from '@/data/upgradeData';
 import { CraftingRecipe, hasIngredients } from '@/data/craftingRecipes';
+import { TERRAIN_EFFECTS } from '@/components/game/TerrainToast';
 
 const STORAGE_KEY = 'junkrunner_save';
 const REVEAL_RADIUS = 2;
+
+// Repair cost: 1 scrap per 10% condition restored
+const REPAIR_SCRAP_NAME = 'Rusty Bolt';
 
 function createPrimaryHelper(): HelperRobot {
   return {
@@ -635,6 +639,61 @@ export function useGameState() {
         }
       }
       
+      // Apply component damage from terrain
+      let updatedHelpers = [...prev.player.helpers];
+      let componentDamageMessage = '';
+      
+      if (destinationTerrain && movementType !== 'jump') {
+        const terrainConfig = TERRAIN_EFFECTS[destinationTerrain.type];
+        
+        if (terrainConfig?.damagesMobility && primary && mobility) {
+          // Damage mobility component
+          const newCondition = Math.max(0, mobility.condition - terrainConfig.damagesMobility);
+          const updatedMobility = { ...mobility, condition: newCondition };
+          
+          updatedHelpers = updatedHelpers.map(h => 
+            h.id === primary.id 
+              ? { ...h, components: { ...h.components, mobility: updatedMobility } }
+              : h
+          );
+          
+          if (newCondition === 0) {
+            componentDamageMessage = `${mobility.name} is now BROKEN!`;
+          } else if (newCondition < 20) {
+            componentDamageMessage = `${mobility.name} critically damaged (${newCondition}%)`;
+          }
+        }
+        
+        if (terrainConfig?.damagesFrame && primary) {
+          // Damage all installed components slightly
+          const damageToBattery = primary.components.battery 
+            ? { ...primary.components.battery, condition: Math.max(0, primary.components.battery.condition - terrainConfig.damagesFrame) }
+            : null;
+          const damageToMobility = primary.components.mobility
+            ? { ...primary.components.mobility, condition: Math.max(0, primary.components.mobility.condition - terrainConfig.damagesFrame) }
+            : null;
+          const damageToModules = primary.components.modules.map(m => 
+            m ? { ...m, condition: Math.max(0, m.condition - terrainConfig.damagesFrame) } : m
+          );
+          
+          updatedHelpers = updatedHelpers.map(h => 
+            h.id === primary.id 
+              ? { 
+                  ...h, 
+                  components: { 
+                    ...h.components, 
+                    mobility: damageToMobility,
+                    battery: damageToBattery,
+                    modules: damageToModules,
+                  } 
+                }
+              : h
+          );
+          
+          componentDamageMessage = 'All components took radiation damage!';
+        }
+      }
+      
       // Spider legs wall traversal costs 2x
       const wallAtDest = prev.junkyard.walls.some(w => w.x === newX && w.y === newY);
       if (wallAtDest && mobilityName.includes('spider')) {
@@ -646,9 +705,23 @@ export function useGameState() {
         return prev;
       }
       
+      // Check if mobility is broken (condition 0) - can't move!
+      const primaryHelper = updatedHelpers.find(h => h.isPrimary);
+      const mobilityCondition = primaryHelper?.components.mobility?.condition ?? 100;
+      if (mobilityCondition === 0) {
+        // Allow move but show warning - player is stranded without repair
+        componentDamageMessage = 'Mobility broken! Return to base for repairs!';
+      }
+      
       // Update bag items if toxic damage occurred
       if (updatedBagItems !== bagItems) {
         setBagItems(updatedBagItems);
+      }
+      
+      // Store component damage message for display
+      if (componentDamageMessage && destinationTerrain) {
+        // Will be shown via terrain toast with extra message
+        setLastTerrainType({ ...destinationTerrain, name: componentDamageMessage });
       }
       
       let finalX = newX;
@@ -678,10 +751,11 @@ export function useGameState() {
       let newCharge = prev.player.currentCharge - batteryCost;
       
       // Solar panel regeneration
-      if (primary) {
-        const solarRate = getSolarRegenRate(primary);
+      const updatedPrimary = updatedHelpers.find(h => h.isPrimary);
+      if (updatedPrimary) {
+        const solarRate = getSolarRegenRate(updatedPrimary);
         if (solarRate !== null) {
-          const maxCapacity = getMaxBatteryCapacity(primary);
+          const maxCapacity = getMaxBatteryCapacity(updatedPrimary);
           const regenAmount = calculateSolarRegen(newTurnCount, solarRate, maxCapacity, newCharge);
           newCharge = Math.min(maxCapacity, newCharge + regenAmount);
         }
@@ -695,6 +769,7 @@ export function useGameState() {
           playerX: finalX, 
           playerY: finalY,
           currentCharge: newCharge,
+          helpers: updatedHelpers,
         },
         turnCount: newTurnCount,
       };
@@ -1377,6 +1452,96 @@ export function useGameState() {
     return primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
   }, [gameState]);
 
+  // Repair a component on a helper robot using scrap
+  const repairComponent = useCallback((helperId: string, slotType: 'mobility' | 'battery' | 'module', moduleIndex?: number) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const helperIndex = prev.player.helpers.findIndex(h => h.id === helperId);
+      if (helperIndex === -1) return prev;
+      
+      const helper = prev.player.helpers[helperIndex];
+      let component: Item | null = null;
+      
+      // Get the component to repair
+      switch (slotType) {
+        case 'mobility':
+          component = helper.components.mobility;
+          break;
+        case 'battery':
+          component = helper.components.battery;
+          break;
+        case 'module':
+          if (moduleIndex !== undefined && helper.components.modules[moduleIndex]) {
+            component = helper.components.modules[moduleIndex];
+          }
+          break;
+      }
+      
+      if (!component) return prev;
+      
+      // Calculate scrap needed: 1 scrap per 10% to repair (min 1)
+      const damagePercent = 100 - component.condition;
+      if (damagePercent === 0) return prev; // Already at 100%
+      
+      const scrapNeeded = Math.max(1, Math.ceil(damagePercent / 10));
+      
+      // Count available scrap
+      const scrapCount = prev.player.stash.filter(i => i.name === REPAIR_SCRAP_NAME).length;
+      if (scrapCount < scrapNeeded) return prev;
+      
+      // Consume scrap
+      let consumed = 0;
+      const newStash = prev.player.stash.filter(item => {
+        if (item.name === REPAIR_SCRAP_NAME && consumed < scrapNeeded) {
+          consumed++;
+          return false;
+        }
+        return true;
+      });
+      
+      // Repair the component to 100%
+      const repairedComponent = { ...component, condition: 100 };
+      
+      // Update the helper
+      const updatedComponents = { ...helper.components };
+      switch (slotType) {
+        case 'mobility':
+          updatedComponents.mobility = repairedComponent;
+          break;
+        case 'battery':
+          updatedComponents.battery = repairedComponent;
+          break;
+        case 'module':
+          if (moduleIndex !== undefined) {
+            const newModules = [...updatedComponents.modules];
+            newModules[moduleIndex] = repairedComponent;
+            updatedComponents.modules = newModules;
+          }
+          break;
+      }
+      
+      const updatedHelpers = [...prev.player.helpers];
+      updatedHelpers[helperIndex] = { ...helper, components: updatedComponents };
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          stash: newStash,
+          helpers: updatedHelpers,
+        },
+      };
+    });
+  }, []);
+
+  // Get repair cost for a component
+  const getRepairCost = useCallback((component: Item): number => {
+    const damagePercent = 100 - component.condition;
+    if (damagePercent === 0) return 0;
+    return Math.max(1, Math.ceil(damagePercent / 10));
+  }, []);
+
   return {
     gameState,
     isLoading,
@@ -1404,6 +1569,8 @@ export function useGameState() {
     craftItem,
     buildFrame,
     getMaxBattery,
+    repairComponent,
+    getRepairCost,
     resetGame,
   };
 }

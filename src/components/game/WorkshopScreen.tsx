@@ -28,14 +28,20 @@ interface WorkshopScreenProps {
   onRemoveComponent: (helperId: string, slotType: 'mobility' | 'battery' | 'module', moduleIndex?: number) => void;
   onCraftItem?: (recipe: CraftingRecipe) => void;
   onBuildFrame?: (frameType: string) => void;
+  onRepairComponent?: (helperId: string, slotType: 'mobility' | 'battery' | 'module', moduleIndex?: number) => void;
+  getRepairCost?: (component: Item) => number;
 }
 
 type SlotType = 'mobility' | 'battery' | 'module';
-type WorkshopSection = 'main' | 'robots' | 'frames' | 'battery' | 'storage' | 'mobility' | 'modules';
+type WorkshopSection = 'main' | 'robots' | 'frames' | 'battery' | 'storage' | 'mobility' | 'modules' | 'repairs';
+
+// Scrap name used for repairs
+const REPAIR_SCRAP_NAME = 'Rusty Bolt';
 
 const SECTION_CONFIG: Record<WorkshopSection, { title: string; icon: React.ReactNode; recipes?: CraftingRecipe[] }> = {
   main: { title: 'Workshop', icon: <Wrench className="w-5 h-5" /> },
   robots: { title: 'Your Robots', icon: <Bot className="w-5 h-5" /> },
+  repairs: { title: 'Repairs', icon: <Wrench className="w-5 h-5" /> },
   frames: { title: 'Robot Frames', icon: <Bot className="w-5 h-5" />, recipes: FRAME_RECIPES },
   battery: { title: 'Batteries', icon: <Battery className="w-5 h-5" />, recipes: BATTERY_RECIPES },
   storage: { title: 'Storage Modules', icon: <Package className="w-5 h-5" />, recipes: STORAGE_RECIPES },
@@ -53,6 +59,8 @@ export function WorkshopScreen({
   onRemoveComponent,
   onCraftItem,
   onBuildFrame,
+  onRepairComponent,
+  getRepairCost,
 }: WorkshopScreenProps) {
   const [selectedHelperId, setSelectedHelperId] = useState<string | null>(null);
   const [selectingSlot, setSelectingSlot] = useState<{ type: SlotType; index?: number } | null>(null);
@@ -318,6 +326,159 @@ export function WorkshopScreen({
     );
   };
 
+  // Get all damaged components across all helpers
+  const getDamagedComponents = () => {
+    const damaged: Array<{
+      helper: HelperRobot;
+      component: Item;
+      slotType: 'mobility' | 'battery' | 'module';
+      moduleIndex?: number;
+    }> = [];
+    
+    helpers.forEach(helper => {
+      if (helper.components.mobility && helper.components.mobility.condition < 100) {
+        damaged.push({ helper, component: helper.components.mobility, slotType: 'mobility' });
+      }
+      if (helper.components.battery && helper.components.battery.condition < 100) {
+        damaged.push({ helper, component: helper.components.battery, slotType: 'battery' });
+      }
+      helper.components.modules.forEach((module, idx) => {
+        if (module && module.condition < 100) {
+          damaged.push({ helper, component: module, slotType: 'module', moduleIndex: idx });
+        }
+      });
+    });
+    
+    return damaged;
+  };
+
+  const damagedComponents = getDamagedComponents();
+  const scrapCount = stash.filter(i => i.name === REPAIR_SCRAP_NAME).length;
+
+  // Repairs section view
+  const renderRepairsSection = () => {
+    return (
+      <motion.div
+        className="fixed inset-0 z-50 bg-background flex flex-col"
+        initial={{ opacity: 0, x: '100%' }}
+        animate={{ opacity: 1, x: 0 }}
+        exit={{ opacity: 0, x: '100%' }}
+      >
+        {/* Header */}
+        <header className="industrial-panel p-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <Button variant="ghost" size="icon" onClick={() => setCurrentSection('main')}>
+              <ArrowLeft className="w-5 h-5" />
+            </Button>
+            <div className="flex items-center gap-2">
+              <Wrench className="w-5 h-5" />
+              <h2 className="text-xl font-industrial text-primary">Repairs</h2>
+            </div>
+          </div>
+          <Button variant="ghost" size="icon" onClick={onClose}>
+            <X className="w-5 h-5" />
+          </Button>
+        </header>
+
+        <main className="flex-1 p-4 overflow-y-auto">
+          {/* Scrap inventory */}
+          <div className="mb-6 p-4 industrial-panel rounded-lg">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="text-xl">🔩</span>
+                <span className="text-sm text-muted-foreground">Available Scrap</span>
+              </div>
+              <span className="font-mono text-lg">{scrapCount} {REPAIR_SCRAP_NAME}</span>
+            </div>
+            <p className="text-xs text-muted-foreground mt-2">
+              Repairs cost 1 scrap per 10% condition restored
+            </p>
+          </div>
+
+          {damagedComponents.length === 0 ? (
+            <div className="text-center py-12">
+              <span className="text-4xl mb-4 block">✅</span>
+              <p className="text-muted-foreground">All components in perfect condition!</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {damagedComponents.map((item, idx) => {
+                const frame = HELPER_FRAMES[item.helper.frameId];
+                const repairCost = getRepairCost?.(item.component) ?? 0;
+                const canRepair = scrapCount >= repairCost && onRepairComponent;
+                const isBroken = item.component.condition === 0;
+                
+                return (
+                  <motion.div
+                    key={`${item.helper.id}-${item.slotType}-${item.moduleIndex ?? 0}`}
+                    className={cn(
+                      "industrial-panel p-4 rounded-lg",
+                      isBroken && "ring-2 ring-destructive"
+                    )}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: idx * 0.05 }}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-3xl">{item.component.icon}</span>
+                      <div className="flex-1">
+                        <h4 className="font-industrial">{item.component.name}</h4>
+                        <p className="text-xs text-muted-foreground">
+                          {frame.name} • {item.slotType}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                            <div 
+                              className={cn(
+                                "h-full transition-all",
+                                item.component.condition > 50 ? "bg-primary" :
+                                item.component.condition > 20 ? "bg-yellow-500" : "bg-destructive"
+                              )}
+                              style={{ width: `${item.component.condition}%` }}
+                            />
+                          </div>
+                          <span className={cn(
+                            "text-xs font-mono",
+                            isBroken ? "text-destructive" : "text-muted-foreground"
+                          )}>
+                            {item.component.condition}%
+                          </span>
+                        </div>
+                        {isBroken && (
+                          <span className="text-xs text-destructive font-bold mt-1 block">
+                            ⚠️ BROKEN - Cannot be used!
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-right">
+                        <p className={cn(
+                          "text-xs",
+                          canRepair ? "text-muted-foreground" : "text-destructive"
+                        )}>
+                          Cost: {repairCost} 🔩
+                        </p>
+                        <Button
+                          variant="steel"
+                          size="sm"
+                          className="mt-1"
+                          disabled={!canRepair}
+                          onClick={() => onRepairComponent?.(item.helper.id, item.slotType, item.moduleIndex)}
+                        >
+                          <Wrench className="w-3 h-3 mr-1" />
+                          Repair
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
+            </div>
+          )}
+        </main>
+      </motion.div>
+    );
+  };
+
   // Helper Engineering View
   if (selectedHelper) {
     const frame = HELPER_FRAMES[selectedHelper.frameId];
@@ -550,6 +711,10 @@ export function WorkshopScreen({
     return renderRobotsSection();
   }
   
+  if (currentSection === 'repairs') {
+    return renderRepairsSection();
+  }
+  
   if (currentSection !== 'main') {
     return renderCategorySection();
   }
@@ -607,6 +772,30 @@ export function WorkshopScreen({
             </div>
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">{helpers.length}</span>
+              <ChevronRight className="w-5 h-5 text-muted-foreground" />
+            </div>
+          </motion.button>
+
+          {/* Repairs */}
+          <motion.button
+            onClick={() => setCurrentSection('repairs')}
+            className={cn(
+              "w-full industrial-panel p-4 rounded-lg flex items-center justify-between hover:bg-primary/5 transition-colors",
+              damagedComponents.length > 0 && "ring-1 ring-yellow-500/50"
+            )}
+            whileTap={{ scale: 0.98 }}
+          >
+            <div className="flex items-center gap-3">
+              <span className="text-2xl">🔧</span>
+              <div className="text-left">
+                <h3 className="font-industrial">Repairs</h3>
+                <p className="text-xs text-muted-foreground">Fix damaged components</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              {damagedComponents.length > 0 && (
+                <span className="text-sm text-yellow-500">{damagedComponents.length} damaged</span>
+              )}
               <ChevronRight className="w-5 h-5 text-muted-foreground" />
             </div>
           </motion.button>

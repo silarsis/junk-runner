@@ -41,13 +41,19 @@ const Index = () => {
     craftItem,
     buildFrame,
     getMaxBattery,
+    repairComponent,
+    getRepairCost,
     resetGame,
   } = useGameState();
 
   // Show terrain toast when stepping on terrain
   useEffect(() => {
     if (lastTerrainType) {
-      showTerrainToast(lastTerrainType.type);
+      // If there's a custom name (damage message), use it as extra info
+      const extraMessage = lastTerrainType.name && !lastTerrainType.name.includes('Ground') && !lastTerrainType.name.includes('Floor') 
+        ? lastTerrainType.name 
+        : undefined;
+      showTerrainToast(lastTerrainType.type, extraMessage);
       setLastTerrainType(null);
     }
   }, [lastTerrainType, setLastTerrainType]);
@@ -180,6 +186,8 @@ const Index = () => {
             onRemoveComponent={removeComponent}
             onCraftItem={craftItem}
             onBuildFrame={buildFrame}
+            onRepairComponent={repairComponent}
+            getRepairCost={getRepairCost}
           />
         )}
       </AnimatePresence>
