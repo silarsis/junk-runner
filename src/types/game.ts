@@ -200,6 +200,7 @@ export interface BaseUpgrades {
   workshopTier: number;
   controlCapacity: number;
   chargerEfficiency: number; // reduces cost per charge unit
+  baseRechargeRate: number; // passive recharge at base (seconds per 1 charge)
 }
 
 export interface PlayerState {
