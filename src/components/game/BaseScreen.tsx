@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Battery, Bot, Zap, RotateCcw } from 'lucide-react';
+import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Battery, Bot, Zap, RotateCcw, Store } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameState, Bag } from '@/types/game';
 import { UPGRADES } from '@/data/upgradeData';
@@ -275,11 +275,8 @@ export function BaseScreen({
               className="w-full h-16 flex-col gap-1"
               onClick={onOpenSell}
             >
-              <Coins className="w-5 h-5" />
-              <span className="text-xs">Sell</span>
-              {stashItemCount > 0 && (
-                <span className="text-[10px] text-primary">({stashItemCount})</span>
-              )}
+              <ShoppingBag className="w-5 h-5" />
+              <span className="text-xs">Shop</span>
             </Button>
           </motion.div>
 

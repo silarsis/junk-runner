@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   GameState, 
@@ -33,9 +33,17 @@ import { TERRAIN_EFFECTS } from '@/components/game/TerrainToast';
 
 const STORAGE_KEY = 'junkrunner_save';
 const REVEAL_RADIUS = 2;
+const SHOP_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes in milliseconds
 
 // Repair cost: 1 scrap per 10% condition restored
 const REPAIR_SCRAP_NAME = 'Rusty Bolt';
+
+// Shop item interface
+export interface ShopItem {
+  item: Item;
+  buyPrice: number;
+}
+
 
 function createPrimaryHelper(): HelperRobot {
   return {
@@ -143,6 +151,62 @@ function generateLoot(seed: number): Item[] {
   }
   
   return items;
+}
+
+// Generate shop inventory - only scrap and components, no modules/storage/junk
+function generateShopInventory(seed: number): ShopItem[] {
+  const random = seededRandom(seed);
+  // Random number of items 4-8
+  const itemCount = 4 + Math.floor(random() * 5);
+  const items: ShopItem[] = [];
+  
+  // Filter templates to only scrap and components
+  const shopTemplates = ITEM_TEMPLATES.filter(
+    t => t.category === 'scrap' || t.category === 'component'
+  );
+  
+  for (let i = 0; i < itemCount; i++) {
+    const rarity = pickRarity(random);
+    const templates = shopTemplates.filter(t => t.rarity === rarity);
+    if (templates.length === 0) continue;
+    
+    const template = templates[Math.floor(random() * templates.length)];
+    
+    // Create a clean item at full condition
+    const item: Item = {
+      id: uuidv4(),
+      name: template.name,
+      category: template.category,
+      rarity: template.rarity,
+      condition: 100, // Always clean/full condition
+      isDirty: false,
+      sizeW: template.sizeW,
+      sizeH: template.sizeH,
+      weight: template.weight,
+      baseValue: template.baseValue,
+      hiddenModifiers: [],
+      revealedModifiers: [],
+      icon: template.icon,
+    };
+    
+    // Calculate buy price: 110% of the clean item sell value
+    const rarityMult: Record<Rarity, number> = {
+      common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
+    };
+    const cleanSellPrice = Math.floor(template.baseValue * rarityMult[template.rarity]);
+    const buyPrice = Math.ceil(cleanSellPrice * 1.1);
+    
+    items.push({ item, buyPrice });
+  }
+  
+  return items;
+}
+
+// Get the next shop refresh time based on current time
+function getNextShopRefreshTime(currentTime: number = Date.now()): number {
+  // Round up to the next 30-minute interval
+  const intervalStart = Math.floor(currentTime / SHOP_REFRESH_INTERVAL) * SHOP_REFRESH_INTERVAL;
+  return intervalStart + SHOP_REFRESH_INTERVAL;
 }
 
 // Get the bag (storage) from the primary helper's storage module
@@ -261,6 +325,67 @@ export function useGameState() {
   const [foundItems, setFoundItems] = useState<Item[]>([]);
   // Last terrain stepped on for notification
   const [lastTerrainType, setLastTerrainType] = useState<TerrainTile | null>(null);
+  // Shop state - persisted separately
+  const [shopInventory, setShopInventory] = useState<ShopItem[]>([]);
+  const [shopRefreshTime, setShopRefreshTime] = useState<number>(0);
+  
+  // Generate or refresh shop inventory when needed
+  useEffect(() => {
+    const now = Date.now();
+    const storedShop = localStorage.getItem('junkrunner_shop');
+    
+    if (storedShop) {
+      try {
+        const parsed = JSON.parse(storedShop);
+        if (parsed.refreshTime && parsed.refreshTime > now && Array.isArray(parsed.inventory)) {
+          // Shop is still valid
+          setShopInventory(parsed.inventory);
+          setShopRefreshTime(parsed.refreshTime);
+          return;
+        }
+      } catch (e) {
+        // Invalid data, regenerate
+      }
+    }
+    
+    // Generate new shop inventory
+    const seed = Math.floor(now / SHOP_REFRESH_INTERVAL);
+    const newInventory = generateShopInventory(seed);
+    const newRefreshTime = getNextShopRefreshTime(now);
+    
+    setShopInventory(newInventory);
+    setShopRefreshTime(newRefreshTime);
+    
+    // Save to localStorage
+    localStorage.setItem('junkrunner_shop', JSON.stringify({
+      inventory: newInventory,
+      refreshTime: newRefreshTime
+    }));
+  }, []);
+  
+  // Check for shop refresh periodically
+  useEffect(() => {
+    const checkRefresh = () => {
+      const now = Date.now();
+      if (now >= shopRefreshTime && shopRefreshTime > 0) {
+        const seed = Math.floor(now / SHOP_REFRESH_INTERVAL);
+        const newInventory = generateShopInventory(seed);
+        const newRefreshTime = getNextShopRefreshTime(now);
+        
+        setShopInventory(newInventory);
+        setShopRefreshTime(newRefreshTime);
+        
+        localStorage.setItem('junkrunner_shop', JSON.stringify({
+          inventory: newInventory,
+          refreshTime: newRefreshTime
+        }));
+      }
+    };
+    
+    // Check every minute
+    const intervalId = setInterval(checkRefresh, 60 * 1000);
+    return () => clearInterval(intervalId);
+  }, [shopRefreshTime]);
   // Load game state
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
@@ -1613,6 +1738,38 @@ export function useGameState() {
     const itemSeed = pileSeed + pile.x * 1000 + pile.y;
     return generateLoot(itemSeed);
   }, [gameState?.junkyard?.seed]);
+  // Buy an item from the shop
+  const buyShopItem = useCallback((itemId: string) => {
+    const shopItem = shopInventory.find(si => si.item.id === itemId);
+    if (!shopItem) return;
+    
+    setGameState(prev => {
+      if (!prev) return prev;
+      if (prev.player.currency < shopItem.buyPrice) return prev;
+      
+      // Add item to stash
+      const newItem = { ...shopItem.item, id: uuidv4() }; // New ID for the purchased item
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          currency: prev.player.currency - shopItem.buyPrice,
+          stash: [...prev.player.stash, newItem],
+        },
+      };
+    });
+    
+    // Remove item from shop inventory
+    const newInventory = shopInventory.filter(si => si.item.id !== itemId);
+    setShopInventory(newInventory);
+    
+    // Update localStorage
+    localStorage.setItem('junkrunner_shop', JSON.stringify({
+      inventory: newInventory,
+      refreshTime: shopRefreshTime
+    }));
+  }, [shopInventory, shopRefreshTime]);
 
   return {
     gameState,
@@ -1646,5 +1803,8 @@ export function useGameState() {
     resetGame,
     getPileRevealCount,
     getPilePreview,
+    shopInventory,
+    shopRefreshTime,
+    buyShopItem,
   };
 }

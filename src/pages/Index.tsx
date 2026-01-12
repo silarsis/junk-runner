@@ -5,7 +5,7 @@ import { BaseScreen } from '@/components/game/BaseScreen';
 import { JunkyardScreen } from '@/components/game/JunkyardScreen';
 import { InventoryModal } from '@/components/game/InventoryModal';
 import { CleaningScreen } from '@/components/game/CleaningScreen';
-import { SellScreen } from '@/components/game/SellScreen';
+import { ShopScreen } from '@/components/game/ShopScreen';
 import { UpgradesScreen } from '@/components/game/UpgradesScreen';
 import { WorkshopScreen } from '@/components/game/WorkshopScreen';
 import { StashModal } from '@/components/game/StashModal';
@@ -14,7 +14,7 @@ import { FoundItemsAlert } from '@/components/game/FoundItemsAlert';
 import { showTerrainToast } from '@/components/game/TerrainToast';
 import { getBiomeFromSeed } from '@/data/biomes';
 
-type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop' | 'scavenge';
+type Screen = 'base' | 'junkyard' | 'cleaning' | 'shop' | 'upgrades' | 'workshop' | 'scavenge';
 
 const Index = () => {
   const {
@@ -48,6 +48,9 @@ const Index = () => {
     resetGame,
     getPileRevealCount,
     getPilePreview,
+    shopInventory,
+    shopRefreshTime,
+    buyShopItem,
   } = useGameState();
 
   // Show terrain toast when stepping on terrain
@@ -122,7 +125,7 @@ const Index = () => {
             currentBag={currentBag}
             bagItemCount={bagItems.length}
             onOpenCleaning={() => setCurrentScreen('cleaning')}
-            onOpenSell={() => setCurrentScreen('sell')}
+            onOpenSell={() => setCurrentScreen('shop')}
             onOpenUpgrades={() => setCurrentScreen('upgrades')}
             onOpenWorkshop={() => setCurrentScreen('workshop')}
             onOpenStash={() => setShowStash(true)}
@@ -173,12 +176,16 @@ const Index = () => {
           />
         )}
 
-        {currentScreen === 'sell' && (
-          <SellScreen
-            key="sell"
+        {currentScreen === 'shop' && (
+          <ShopScreen
+            key="shop"
             stash={gameState.player.stash}
+            currency={gameState.player.currency}
+            shopInventory={shopInventory}
+            shopRefreshTime={shopRefreshTime}
             onSell={sellItem}
             onSellMultiple={sellMultipleItems}
+            onBuy={buyShopItem}
             onClose={() => setCurrentScreen('base')}
           />
         )}
