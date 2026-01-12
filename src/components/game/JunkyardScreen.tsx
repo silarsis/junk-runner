@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
-import { Search, Home, Package, Battery, BatteryWarning } from 'lucide-react';
+import { Search, Home, Package, Battery, BatteryWarning, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState, JunkPile, Bag, HelperRobot, TerrainType } from '@/types/game';
+import { GameState, JunkPile, Bag, HelperRobot, TerrainType, Item } from '@/types/game';
 import { isTilePassable, getWallAt, getTerrainAt, getBarrierAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
 
@@ -16,6 +16,8 @@ interface JunkyardScreenProps {
   onSearch: () => void;
   onReturnToBase: () => void;
   onOpenInventory: () => void;
+  pileRevealCount?: number; // How many items to reveal from scanner
+  getPilePreview?: (pile: JunkPile) => Item[]; // Get pre-generated items for a pile
 }
 
 // Get movement type from primary helper
@@ -96,6 +98,8 @@ export function JunkyardScreen({
   onSearch,
   onReturnToBase,
   onOpenInventory,
+  pileRevealCount = 0,
+  getPilePreview,
 }: JunkyardScreenProps) {
   const { junkyard, player, turnCount } = gameState;
   
@@ -109,6 +113,21 @@ export function JunkyardScreen({
   const getRarityClass = (pile: JunkPile) => {
     if (pile.isDepleted) return 'bg-pile-depleted';
     return 'bg-pile-active';
+  };
+
+  // Check if a pile is adjacent to the player (for scanner reveal)
+  const isPileAdjacent = (pile: JunkPile) => {
+    const dx = Math.abs(pile.x - player.playerX);
+    const dy = Math.abs(pile.y - player.playerY);
+    return dx <= 1 && dy <= 1 && !(dx === 0 && dy === 0);
+  };
+
+  // Get scanned items for an adjacent pile
+  const getScannedItems = (pile: JunkPile): Item[] => {
+    if (!getPilePreview || pileRevealCount === 0) return [];
+    if (!isPileAdjacent(pile) || pile.isDepleted) return [];
+    const items = getPilePreview(pile);
+    return items.slice(0, pileRevealCount);
   };
 
   const movementType = getMovementType(player.helpers);
@@ -270,21 +289,46 @@ export function JunkyardScreen({
                   )}
                   
                   {/* Junk pile */}
-                  {isRevealed && pile && !wall && (
-                    <div 
-                      className={cn(
-                        "absolute inset-1 rounded-sm flex items-center justify-center",
-                        getRarityClass(pile)
-                      )}
-                    >
-                      {!pile.isDepleted && (
-                        <span className="text-base sm:text-lg">📦</span>
-                      )}
-                      {pile.isDepleted && (
-                        <span className="text-base sm:text-lg opacity-30">📦</span>
-                      )}
-                    </div>
-                  )}
+                  {isRevealed && pile && !wall && (() => {
+                    const scannedItems = getScannedItems(pile);
+                    const hasScannedItems = scannedItems.length > 0;
+                    
+                    return (
+                      <div 
+                        className={cn(
+                          "absolute inset-0.5 rounded-sm flex flex-col items-center justify-center",
+                          getRarityClass(pile),
+                          hasScannedItems && "ring-1 ring-cyan-400/60"
+                        )}
+                      >
+                        {!pile.isDepleted && (
+                          <>
+                            <span className="text-base sm:text-lg">📦</span>
+                            {/* Scanner preview icons */}
+                            {hasScannedItems && (
+                              <div className="absolute -bottom-0.5 left-0 right-0 flex justify-center gap-0.5">
+                                {scannedItems.slice(0, 3).map((item, idx) => (
+                                  <span 
+                                    key={idx} 
+                                    className="text-[8px] sm:text-[10px] bg-background/80 rounded px-0.5"
+                                    title={item.name}
+                                  >
+                                    {item.icon}
+                                  </span>
+                                ))}
+                                {scannedItems.length > 3 && (
+                                  <span className="text-[8px] text-muted-foreground">+{scannedItems.length - 3}</span>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        )}
+                        {pile.isDepleted && (
+                          <span className="text-base sm:text-lg opacity-30">📦</span>
+                        )}
+                      </div>
+                    );
+                  })()}
                   
                   {/* Dropped item */}
                   {isRevealed && droppedItem && !pile && !wall && (

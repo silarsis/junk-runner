@@ -16,6 +16,7 @@ interface ItemTemplate {
   storageMaxWeight?: number;
   movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
   solarRegenRate?: number; // Turns per 1 charge regen (lower = better)
+  pileRevealCount?: number; // How many items to reveal in junk piles
 }
 
 export const ITEM_TEMPLATES: ItemTemplate[] = [
@@ -53,8 +54,13 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Jump Jets', category: 'mobility', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 3, baseValue: 450, icon: '🚀', movementType: 'jump' },
   
   // General Modules
-  { name: 'Scanner Array', category: 'module', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 150, icon: '📡' },
   { name: 'Cleaning Assist', category: 'module', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 120, icon: '🧹' },
+  
+  // Pile Scanners - reveal items in junk piles before scavenging
+  { name: 'Basic Pile Scanner', category: 'module', rarity: 'uncommon', sizeW: 1, sizeH: 1, weight: 1, baseValue: 80, icon: '🔍', pileRevealCount: 1 },
+  { name: 'Enhanced Pile Scanner', category: 'module', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 180, icon: '🔎', pileRevealCount: 2 },
+  { name: 'Advanced Pile Scanner', category: 'module', rarity: 'epic', sizeW: 2, sizeH: 1, weight: 2, baseValue: 350, icon: '📡', pileRevealCount: 3 },
+  { name: 'Quantum Pile Scanner', category: 'module', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 1, baseValue: 600, icon: '🛰️', pileRevealCount: 5 },
   
   // Solar Panels - passive battery regen in junkyard
   { name: 'Salvaged Solar Panel', category: 'module', rarity: 'uncommon', sizeW: 2, sizeH: 1, weight: 2, baseValue: 100, icon: '☀️', solarRegenRate: 5 },

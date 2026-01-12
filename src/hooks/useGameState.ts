@@ -138,6 +138,7 @@ function generateLoot(seed: number): Item[] {
       storageMaxWeight: template.storageMaxWeight,
       movementType: template.movementType,
       solarRegenRate: template.solarRegenRate,
+      pileRevealCount: template.pileRevealCount,
     });
   }
   
@@ -187,6 +188,14 @@ function calculateSolarRegen(turnCount: number, regenRate: number, maxCharge: nu
     return Math.min(1, maxCharge - currentCharge);
   }
   return 0;
+}
+
+// Get pile scanner reveal count from helper modules (highest = best)
+function getHelperPileRevealCount(helper: HelperRobot): number {
+  const scannerModules = helper.components.modules.filter(m => m?.pileRevealCount);
+  if (scannerModules.length === 0) return 0;
+  // Return the best (highest) reveal count
+  return Math.max(...scannerModules.map(m => m.pileRevealCount!));
 }
 
 // Get primary helper
@@ -1585,6 +1594,26 @@ export function useGameState() {
     return Math.max(1, Math.ceil(damagePercent / 10));
   }, []);
 
+  // Get pile reveal count from primary helper's scanner modules
+  const getPileRevealCount = useCallback((): number => {
+    if (!gameState) return 0;
+    const primary = getPrimaryHelper(gameState.player);
+    if (!primary) return 0;
+    return getHelperPileRevealCount(primary);
+  }, [gameState]);
+
+  // Get or generate items for a pile (for scanner preview)
+  const getPilePreview = useCallback((pile: JunkPile): Item[] => {
+    // If items already pre-generated, return them
+    if (pile.preGeneratedItems) {
+      return pile.preGeneratedItems;
+    }
+    // Generate items based on pile's position as part of the seed
+    const pileSeed = gameState?.junkyard?.seed ?? 0;
+    const itemSeed = pileSeed + pile.x * 1000 + pile.y;
+    return generateLoot(itemSeed);
+  }, [gameState?.junkyard?.seed]);
+
   return {
     gameState,
     isLoading,
@@ -1615,5 +1644,7 @@ export function useGameState() {
     repairComponent,
     getRepairCost,
     resetGame,
+    getPileRevealCount,
+    getPilePreview,
   };
 }

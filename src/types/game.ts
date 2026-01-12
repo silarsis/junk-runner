@@ -33,6 +33,8 @@ export interface Item {
   movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
   // Solar panel specific
   solarRegenRate?: number; // Turns per 1 charge regen
+  // Pile scanner specific
+  pileRevealCount?: number; // How many items to reveal in junk piles
 }
 
 export interface InventoryItem extends Item {
@@ -48,6 +50,7 @@ export interface JunkPile {
   progressTurns: number;
   requiredTurns: number; // Random 1-5 turns to scavenge
   isDepleted: boolean;
+  preGeneratedItems?: Item[]; // Items that will be found (for scanner preview)
 }
 
 export interface DroppedItem {
@@ -163,7 +166,7 @@ export interface CleaningJob {
   duration: number; // in milliseconds
 }
 
-export type FrameType = 'basic' | 'crawler' | 'scout';
+export type FrameType = 'basic' | 'crawler' | 'scout' | 'hauler' | 'explorer' | 'titan';
 
 // Slot types for helper frames
 export interface FrameSlots {

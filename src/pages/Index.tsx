@@ -46,6 +46,8 @@ const Index = () => {
     repairComponent,
     getRepairCost,
     resetGame,
+    getPileRevealCount,
+    getPilePreview,
   } = useGameState();
 
   // Show terrain toast when stepping on terrain
@@ -154,6 +156,8 @@ const Index = () => {
             onSearch={searchPile}
             onReturnToBase={handleReturnToBase}
             onOpenInventory={() => setShowInventory(true)}
+            pileRevealCount={getPileRevealCount()}
+            getPilePreview={getPilePreview}
           />
         )}
 

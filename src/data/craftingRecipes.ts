@@ -21,6 +21,7 @@ export interface CraftingRecipe {
     storageMaxWeight?: number;
     movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
     solarRegenRate?: number;
+    pileRevealCount?: number;
   };
 }
 
@@ -66,6 +67,48 @@ export const FRAME_RECIPES: CraftingRecipe[] = [
       { name: 'Copper Wire', quantity: 4 },
     ],
     currencyCost: 300,
+  },
+  {
+    id: 'frame_hauler',
+    name: 'Hauler Frame',
+    category: 'frame',
+    icon: '🚛',
+    description: 'Heavy cargo frame. 1 mobility, 4 modules, 1 battery slot.',
+    ingredients: [
+      { name: 'Steel Plate', quantity: 6 },
+      { name: 'Motor Unit', quantity: 2 },
+      { name: 'Titanium Scrap', quantity: 2 },
+      { name: 'Broken Gear', quantity: 4 },
+    ],
+    currencyCost: 400,
+  },
+  {
+    id: 'frame_explorer',
+    name: 'Explorer Frame',
+    category: 'frame',
+    icon: '🧭',
+    description: 'Versatile long-range frame. 2 mobility, 3 modules, 2 battery slots.',
+    ingredients: [
+      { name: 'Quantum Chip', quantity: 1 },
+      { name: 'Circuit Board', quantity: 3 },
+      { name: 'Motor Unit', quantity: 2 },
+      { name: 'Titanium Scrap', quantity: 3 },
+    ],
+    currencyCost: 500,
+  },
+  {
+    id: 'frame_titan',
+    name: 'Titan Frame',
+    category: 'frame',
+    icon: '🦾',
+    description: 'Ultimate heavy frame. 2 mobility, 5 modules, 3 battery slots.',
+    ingredients: [
+      { name: 'Fusion Core', quantity: 1 },
+      { name: 'Quantum Chip', quantity: 2 },
+      { name: 'Titanium Scrap', quantity: 4 },
+      { name: 'Motor Unit', quantity: 2 },
+    ],
+    currencyCost: 800,
   },
 ];
 
@@ -261,7 +304,7 @@ export const MOBILITY_RECIPES: CraftingRecipe[] = [
   },
 ];
 
-// General module recipes (scanner, cleaning assist, solar panels)
+// General module recipes (scanner, cleaning assist, solar panels, pile scanners)
 export const MODULE_RECIPES: CraftingRecipe[] = [
   {
     id: 'module_cleaning',
@@ -276,19 +319,64 @@ export const MODULE_RECIPES: CraftingRecipe[] = [
     ],
     currencyCost: 60,
   },
+  // Pile Scanner modules - reveal items in junk piles before scavenging
   {
-    id: 'module_scanner',
-    name: 'Scanner Array',
+    id: 'module_pile_scanner_basic',
+    name: 'Basic Pile Scanner',
     category: 'module',
-    icon: '📡',
-    description: 'Increases reveal radius.',
+    icon: '🔍',
+    description: 'Reveals 1 item in adjacent junk piles.',
+    ingredients: [
+      { name: 'Circuit Board', quantity: 1 },
+      { name: 'Copper Wire', quantity: 2 },
+      { name: 'Broken Gear', quantity: 2 },
+    ],
+    currencyCost: 50,
+    output: { pileRevealCount: 1 },
+  },
+  {
+    id: 'module_pile_scanner_enhanced',
+    name: 'Enhanced Pile Scanner',
+    category: 'module',
+    icon: '🔎',
+    description: 'Reveals 2 items in adjacent junk piles.',
     ingredients: [
       { name: 'Circuit Board', quantity: 2 },
-      { name: 'Quantum Chip', quantity: 1 },
+      { name: 'Power Cell', quantity: 1 },
       { name: 'Copper Wire', quantity: 3 },
     ],
     currencyCost: 120,
+    output: { pileRevealCount: 2 },
   },
+  {
+    id: 'module_pile_scanner_advanced',
+    name: 'Advanced Pile Scanner',
+    category: 'module',
+    icon: '📡',
+    description: 'Reveals 3 items in adjacent junk piles.',
+    ingredients: [
+      { name: 'Quantum Chip', quantity: 1 },
+      { name: 'Circuit Board', quantity: 2 },
+      { name: 'Power Cell', quantity: 1 },
+    ],
+    currencyCost: 200,
+    output: { pileRevealCount: 3 },
+  },
+  {
+    id: 'module_pile_scanner_quantum',
+    name: 'Quantum Pile Scanner',
+    category: 'module',
+    icon: '🛰️',
+    description: 'Reveals 5 items in adjacent junk piles.',
+    ingredients: [
+      { name: 'Fusion Core', quantity: 1 },
+      { name: 'Quantum Chip', quantity: 1 },
+      { name: 'Circuit Board', quantity: 2 },
+    ],
+    currencyCost: 400,
+    output: { pileRevealCount: 5 },
+  },
+  // Solar panels
   {
     id: 'module_solar_basic',
     name: 'Salvaged Solar Panel',
