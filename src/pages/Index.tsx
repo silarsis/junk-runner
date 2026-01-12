@@ -13,6 +13,9 @@ import { ScavengeScreen } from '@/components/game/ScavengeScreen';
 import { FoundItemsAlert } from '@/components/game/FoundItemsAlert';
 import { showTerrainToast } from '@/components/game/TerrainToast';
 import { getBiomeFromSeed } from '@/data/biomes';
+import { TerminalIntroScreen } from '@/components/game/TerminalIntroScreen';
+
+const INTRO_SEEN_KEY = 'junkrunner_intro_seen';
 
 type Screen = 'base' | 'junkyard' | 'cleaning' | 'shop' | 'upgrades' | 'workshop' | 'scavenge';
 
@@ -68,6 +71,22 @@ const Index = () => {
   const [currentScreen, setCurrentScreen] = useState<Screen>('base');
   const [showInventory, setShowInventory] = useState(false);
   const [showStash, setShowStash] = useState(false);
+  const [showIntro, setShowIntro] = useState(() => {
+    try {
+      return localStorage.getItem(INTRO_SEEN_KEY) !== 'true';
+    } catch {
+      return true;
+    }
+  });
+
+  const handleIntroComplete = () => {
+    setShowIntro(false);
+    try {
+      localStorage.setItem(INTRO_SEEN_KEY, 'true');
+    } catch {
+      // Ignore storage errors
+    }
+  };
 
   if (isLoading || !gameState) {
     return (
@@ -103,6 +122,12 @@ const Index = () => {
   const handleResetSave = () => {
     if (confirm('This will permanently delete all your progress and start fresh. Are you sure?')) {
       resetGame();
+      try {
+        localStorage.removeItem(INTRO_SEEN_KEY);
+      } catch {
+        // Ignore
+      }
+      setShowIntro(true);
     }
   };
 
@@ -113,6 +138,10 @@ const Index = () => {
   const currentBag = getCurrentBag();
   const junkyardSeed = gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now();
   const biome = getBiomeFromSeed(junkyardSeed);
+
+  if (showIntro) {
+    return <TerminalIntroScreen onComplete={handleIntroComplete} />;
+  }
 
   return (
     <div className="min-h-screen bg-background">
