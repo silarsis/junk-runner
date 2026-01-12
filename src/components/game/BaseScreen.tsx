@@ -1,24 +1,21 @@
 import { motion } from 'framer-motion';
-import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Trash2, Battery, Bot, Zap, RotateCcw } from 'lucide-react';
+import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Battery, Bot, Zap, RotateCcw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState, Bag, BASIC_BATTERY_CAPACITY } from '@/types/game';
+import { GameState, Bag } from '@/types/game';
 import { UPGRADES } from '@/data/upgradeData';
 import { cn } from '@/lib/utils';
-import { JunkyardPreview } from './JunkyardPreview';
-import { getBiomeFromSeed } from '@/data/biomes';
 
 interface BaseScreenProps {
   gameState: GameState;
   maxBattery: number;
   currentBag: Bag;
   bagItemCount: number;
-  onEnterJunkyard: () => void;
   onOpenCleaning: () => void;
   onOpenSell: () => void;
   onOpenUpgrades: () => void;
   onOpenWorkshop: () => void;
   onOpenStash: () => void;
-  onMoveToNextJunkyard: () => void;
+  onOpenScavenge: () => void;
   onTransferToStash: () => void;
   onRecharge: () => void;
   onResetSave: () => void;
@@ -29,13 +26,12 @@ export function BaseScreen({
   maxBattery,
   currentBag,
   bagItemCount,
-  onEnterJunkyard,
   onOpenCleaning,
   onOpenSell,
   onOpenUpgrades,
   onOpenWorkshop,
   onOpenStash,
-  onMoveToNextJunkyard,
+  onOpenScavenge,
   onTransferToStash,
   onRecharge,
   onResetSave,
@@ -229,31 +225,28 @@ export function BaseScreen({
           </motion.div>
         )}
 
-        {/* Junkyard Preview */}
-        <JunkyardPreview 
-          biome={getBiomeFromSeed(gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now())}
-          seed={gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now()}
-        />
-
-        {/* Main Action - Enter Junkyard */}
-        <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ delay: 0.3 }}
-        >
-          <Button
-            variant="action"
-            size="xl"
-            className="w-full py-8"
-            onClick={onEnterJunkyard}
-          >
-            <Map className="w-6 h-6" />
-            {activeJunkyard ? 'Continue Scavenging' : 'Enter Junkyard'}
-          </Button>
-        </motion.div>
-
         {/* Navigation Grid */}
         <div className="grid grid-cols-2 gap-3 mt-2">
+          {/* Scavenge Button - Primary action */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.3 }}
+            className="col-span-2"
+          >
+            <Button
+              variant="action"
+              className="w-full h-20 flex-col gap-1"
+              onClick={onOpenScavenge}
+            >
+              <Map className="w-6 h-6" />
+              <span className="text-sm font-industrial">Scavenge</span>
+              {activeJunkyard && (
+                <span className="text-[10px] text-primary-foreground/80">(In Progress)</span>
+              )}
+            </Button>
+          </motion.div>
+
           <motion.div
             initial={{ opacity: 0, x: -20 }}
             animate={{ opacity: 1, x: 0 }}
@@ -321,31 +314,12 @@ export function BaseScreen({
           </motion.div>
         </div>
 
-        {/* Move to Next Junkyard */}
-        {activeJunkyard && (
-          <motion.div
-            initial={{ opacity: 0, y: 20 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.6 }}
-            className="mt-auto pt-4"
-          >
-            <Button
-              variant="danger"
-              className="w-full"
-              onClick={onMoveToNextJunkyard}
-            >
-              <Trash2 className="w-4 h-4" />
-              Abandon & Generate New Junkyard
-            </Button>
-          </motion.div>
-        )}
-
         {/* Reset Save Button */}
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.7 }}
-          className="mt-4 pt-4 border-t border-border"
+          transition={{ delay: 0.6 }}
+          className="mt-auto pt-4 border-t border-border"
         >
           <Button
             variant="ghost"
