@@ -9,10 +9,12 @@ import { SellScreen } from '@/components/game/SellScreen';
 import { UpgradesScreen } from '@/components/game/UpgradesScreen';
 import { WorkshopScreen } from '@/components/game/WorkshopScreen';
 import { StashModal } from '@/components/game/StashModal';
+import { ScavengeScreen } from '@/components/game/ScavengeScreen';
 import { FoundItemsAlert } from '@/components/game/FoundItemsAlert';
 import { showTerrainToast } from '@/components/game/TerrainToast';
+import { getBiomeFromSeed } from '@/data/biomes';
 
-type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop';
+type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop' | 'scavenge';
 
 const Index = () => {
   const {
@@ -104,6 +106,8 @@ const Index = () => {
   const controlCapacity = 1 + gameState.player.baseUpgrades.controlCapacity;
   const maxBattery = getMaxBattery();
   const currentBag = getCurrentBag();
+  const junkyardSeed = gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now();
+  const biome = getBiomeFromSeed(junkyardSeed);
 
   return (
     <div className="min-h-screen bg-background">
@@ -115,16 +119,27 @@ const Index = () => {
             maxBattery={maxBattery}
             currentBag={currentBag}
             bagItemCount={bagItems.length}
-            onEnterJunkyard={handleEnterJunkyard}
             onOpenCleaning={() => setCurrentScreen('cleaning')}
             onOpenSell={() => setCurrentScreen('sell')}
             onOpenUpgrades={() => setCurrentScreen('upgrades')}
             onOpenWorkshop={() => setCurrentScreen('workshop')}
             onOpenStash={() => setShowStash(true)}
-            onMoveToNextJunkyard={handleMoveToNextJunkyard}
+            onOpenScavenge={() => setCurrentScreen('scavenge')}
             onTransferToStash={transferToStash}
             onRecharge={handleRecharge}
             onResetSave={handleResetSave}
+          />
+        )}
+
+        {currentScreen === 'scavenge' && (
+          <ScavengeScreen
+            key="scavenge"
+            biome={biome}
+            seed={junkyardSeed}
+            hasActiveJunkyard={gameState.junkyard !== null}
+            onEnterJunkyard={handleEnterJunkyard}
+            onAbandonJunkyard={handleMoveToNextJunkyard}
+            onClose={() => setCurrentScreen('base')}
           />
         )}
 
