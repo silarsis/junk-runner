@@ -641,14 +641,27 @@ export function WorkshopScreen({
                 </motion.button>
               ))}
               
-              {/* Add module button */}
-              {modules.length < frame.slots.moduleSlots && getAvailableItems('module').length > 0 && (
+              {/* Add module button - show if empty slots OR if only basic modules installed */}
+              {getAvailableItems('module').length > 0 && (
                 <Button
                   variant="outline"
                   className="w-full h-16"
-                  onClick={() => setSelectingSlot({ type: 'module', index: modules.length })}
+                  onClick={() => {
+                    // If at capacity but has basic module, replace the first basic one
+                    if (modules.length >= frame.slots.moduleSlots) {
+                      const basicIdx = modules.findIndex(m => isBasicComponent(m));
+                      if (basicIdx >= 0) {
+                        setSelectingSlot({ type: 'module', index: basicIdx });
+                        return;
+                      }
+                    }
+                    setSelectingSlot({ type: 'module', index: modules.length });
+                  }}
                 >
-                  <Plus className="w-5 h-5 mr-2" /> Add Module
+                  <Plus className="w-5 h-5 mr-2" /> 
+                  {modules.length >= frame.slots.moduleSlots && modules.some(m => isBasicComponent(m))
+                    ? 'Replace Basic Storage'
+                    : 'Add Module'}
                 </Button>
               )}
             </div>
