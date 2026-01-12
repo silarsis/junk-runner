@@ -332,8 +332,14 @@ export function useGameState() {
   // Generate or refresh shop inventory when needed
   useEffect(() => {
     const now = Date.now();
-    const storedShop = localStorage.getItem('junkrunner_shop');
-    
+
+    let storedShop: string | null = null;
+    try {
+      storedShop = localStorage.getItem('junkrunner_shop');
+    } catch (err) {
+      console.warn('Shop storage unavailable; regenerating shop inventory.', err);
+    }
+
     if (storedShop) {
       try {
         const parsed = JSON.parse(storedShop);
@@ -347,20 +353,27 @@ export function useGameState() {
         // Invalid data, regenerate
       }
     }
-    
+
     // Generate new shop inventory
     const seed = Math.floor(now / SHOP_REFRESH_INTERVAL);
     const newInventory = generateShopInventory(seed);
     const newRefreshTime = getNextShopRefreshTime(now);
-    
+
     setShopInventory(newInventory);
     setShopRefreshTime(newRefreshTime);
-    
+
     // Save to localStorage
-    localStorage.setItem('junkrunner_shop', JSON.stringify({
-      inventory: newInventory,
-      refreshTime: newRefreshTime
-    }));
+    try {
+      localStorage.setItem(
+        'junkrunner_shop',
+        JSON.stringify({
+          inventory: newInventory,
+          refreshTime: newRefreshTime,
+        }),
+      );
+    } catch (err) {
+      console.warn('Failed to persist shop inventory.', err);
+    }
   }, []);
   
   // Check for shop refresh periodically
@@ -371,17 +384,24 @@ export function useGameState() {
         const seed = Math.floor(now / SHOP_REFRESH_INTERVAL);
         const newInventory = generateShopInventory(seed);
         const newRefreshTime = getNextShopRefreshTime(now);
-        
+
         setShopInventory(newInventory);
         setShopRefreshTime(newRefreshTime);
-        
-        localStorage.setItem('junkrunner_shop', JSON.stringify({
-          inventory: newInventory,
-          refreshTime: newRefreshTime
-        }));
+
+        try {
+          localStorage.setItem(
+            'junkrunner_shop',
+            JSON.stringify({
+              inventory: newInventory,
+              refreshTime: newRefreshTime,
+            }),
+          );
+        } catch (err) {
+          console.warn('Failed to persist refreshed shop inventory.', err);
+        }
       }
     };
-    
+
     // Check every minute
     const intervalId = setInterval(checkRefresh, 60 * 1000);
     return () => clearInterval(intervalId);
@@ -568,7 +588,11 @@ export function useGameState() {
   useEffect(() => {
     if (gameState && !isLoading) {
       const saveData = { ...gameState, bagItems };
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
+      try {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
+      } catch (err) {
+        console.error('Failed to persist save data (storage quota/blocked?).', err);
+      }
     }
   }, [gameState, bagItems, isLoading]);
 
@@ -1763,12 +1787,19 @@ export function useGameState() {
     // Remove item from shop inventory
     const newInventory = shopInventory.filter(si => si.item.id !== itemId);
     setShopInventory(newInventory);
-    
+
     // Update localStorage
-    localStorage.setItem('junkrunner_shop', JSON.stringify({
-      inventory: newInventory,
-      refreshTime: shopRefreshTime
-    }));
+    try {
+      localStorage.setItem(
+        'junkrunner_shop',
+        JSON.stringify({
+          inventory: newInventory,
+          refreshTime: shopRefreshTime,
+        }),
+      );
+    } catch (err) {
+      console.warn('Failed to persist shop purchase.', err);
+    }
   }, [shopInventory, shopRefreshTime]);
 
   return {
