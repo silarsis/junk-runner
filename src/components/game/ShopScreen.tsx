@@ -103,8 +103,8 @@ export function ShopScreen({
         </div>
       </header>
 
-      <Tabs defaultValue="sell" className="flex-1 flex flex-col">
-        <TabsList className="mx-4 mt-2">
+      <Tabs defaultValue="sell" className="flex-1 flex flex-col overflow-hidden">
+        <TabsList className="mx-4 mt-2 shrink-0">
           <TabsTrigger value="sell" className="flex-1 gap-2">
             <Tag className="w-4 h-4" />
             Sell
@@ -116,7 +116,7 @@ export function ShopScreen({
         </TabsList>
 
         {/* Sell Tab */}
-        <TabsContent value="sell" className="flex-1 p-4 overflow-y-auto">
+        <TabsContent value="sell" className="flex-1 p-4 overflow-y-auto min-h-0">
           {/* Quick Actions */}
           {junkItems.length > 0 && (
             <section className="mb-6">
@@ -198,7 +198,7 @@ export function ShopScreen({
         </TabsContent>
 
         {/* Buy Tab */}
-        <TabsContent value="buy" className="flex-1 p-4 overflow-y-auto">
+        <TabsContent value="buy" className="flex-1 p-4 overflow-y-auto min-h-0">
           {/* Refresh Timer */}
           <div className="mb-4 p-3 bg-muted/30 rounded-lg flex items-center justify-between">
             <span className="text-sm text-muted-foreground">Stock refreshes in:</span>
