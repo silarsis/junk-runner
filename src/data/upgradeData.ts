@@ -56,6 +56,15 @@ export const UPGRADES: Record<string, UpgradeInfo> = {
     getCost: (level) => 100 * (level + 1),
     getValue: (level) => 1 - (level * 0.15), // 1.0, 0.85, 0.70, 0.55, 0.40, 0.25
   },
+  baseRechargeRate: {
+    id: 'baseRechargeRate',
+    name: 'Base Slow Recharge',
+    description: 'Passive battery recharge while at base',
+    icon: '⚡',
+    maxLevel: 4,
+    getCost: (level) => 150 * Math.pow(2, level),
+    getValue: (level) => 300 - (level * 60), // 300s, 240s, 180s, 120s, 60s (5min -> 1min)
+  },
 };
 
 export interface HelperFrameInfo {

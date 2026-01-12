@@ -62,6 +62,7 @@ function createInitialPlayerState(): PlayerState {
       workshopTier: 0,
       controlCapacity: 0,
       chargerEfficiency: 0,
+      baseRechargeRate: 0,
     },
     helpers: [createPrimaryHelper()],
     cleaningJobs: [],
@@ -271,12 +272,13 @@ export function useGameState() {
         // Migration: ensure baseUpgrades exists and has numeric fields
         if (!parsed.player.baseUpgrades || typeof parsed.player.baseUpgrades !== 'object') {
           parsed.player.baseUpgrades = {
-            cleaningSlots: 0,
-            cleaningSpeed: 0,
-            workshopTier: 0,
-            controlCapacity: 0,
-            chargerEfficiency: 0,
-          };
+          cleaningSlots: 0,
+          cleaningSpeed: 0,
+          workshopTier: 0,
+          controlCapacity: 0,
+          chargerEfficiency: 0,
+          baseRechargeRate: 0,
+        };
         }
         const bu = parsed.player.baseUpgrades as Record<string, unknown>;
         const ensureNumber = (key: string, fallback = 0) => {
@@ -288,6 +290,7 @@ export function useGameState() {
         ensureNumber('workshopTier');
         ensureNumber('controlCapacity');
         ensureNumber('chargerEfficiency');
+        ensureNumber('baseRechargeRate');
 
         // Migration: ensure arrays exist
         if (!Array.isArray(parsed.player.stash)) {
@@ -434,6 +437,46 @@ export function useGameState() {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
     }
   }, [gameState, bagItems, isLoading]);
+
+  // Passive base recharge timer - only when at base (not in junkyard)
+  useEffect(() => {
+    if (!gameState || isLoading) return;
+    
+    // Only recharge when at base (no currentYardId means at base)
+    const isAtBase = !gameState.player.currentYardId;
+    if (!isAtBase) return;
+    
+    const primary = getPrimaryHelper(gameState.player);
+    if (!primary) return;
+    
+    const maxCharge = getMaxBatteryCapacity(primary);
+    if (gameState.player.currentCharge >= maxCharge) return;
+    
+    // Get recharge rate from upgrade (default 300s = 5 min, min 60s = 1 min)
+    const upgradeLevel = gameState.player.baseUpgrades.baseRechargeRate || 0;
+    const rechargeIntervalSeconds = 300 - (upgradeLevel * 60); // 300, 240, 180, 120, 60
+    
+    const intervalId = setInterval(() => {
+      setGameState(prev => {
+        if (!prev) return prev;
+        const primaryHelper = getPrimaryHelper(prev.player);
+        if (!primaryHelper) return prev;
+        
+        const max = getMaxBatteryCapacity(primaryHelper);
+        if (prev.player.currentCharge >= max) return prev;
+        
+        return {
+          ...prev,
+          player: {
+            ...prev.player,
+            currentCharge: Math.min(prev.player.currentCharge + 1, max),
+          },
+        };
+      });
+    }, rechargeIntervalSeconds * 1000);
+    
+    return () => clearInterval(intervalId);
+  }, [gameState?.player.currentYardId, gameState?.player.baseUpgrades.baseRechargeRate, gameState?.player.currentCharge, isLoading]);
 
   // Get current bag dimensions from primary helper
   const getCurrentBag = useCallback((): Bag => {
