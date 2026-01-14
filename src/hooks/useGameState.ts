@@ -506,10 +506,50 @@ export function useGameState() {
 
         parsed.player.cleaningJobs = (parsed.player.cleaningJobs as unknown[]).filter(isValidCleaningJob);
 
-        // Migration: ensure automation state exists
+        // Migration: ensure automation state exists and is valid
         if (!parsed.player.automation || typeof parsed.player.automation !== 'object') {
           parsed.player.automation = { cleaningBot: null };
+        } else {
+          // Validate cleaningBot if it exists
+          const bot = parsed.player.automation.cleaningBot;
+          if (bot !== null) {
+            // Check if bot has valid structure
+            const isBotValid = isRecord(bot) &&
+              typeof bot.id === 'string' &&
+              typeof bot.isActive === 'boolean' &&
+              isRecord(bot.priority) &&
+              Array.isArray(bot.priority.rarityOrder) &&
+              Array.isArray(bot.priority.categoryOrder);
+            
+            if (!isBotValid) {
+              // Bot data is corrupted, reset it
+              parsed.player.automation.cleaningBot = null;
+            } else {
+              // Ensure priority arrays have all required values (in case new rarities/categories were added)
+              const validRarities: Rarity[] = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+              const validCategories: ItemCategory[] = ['component', 'module', 'battery', 'mobility', 'storage', 'scrap', 'junk'];
+              
+              const priority = bot.priority as { rarityOrder: string[]; categoryOrder: string[] };
+              
+              // Filter to only valid rarities and add any missing ones at the end
+              const existingRarities = priority.rarityOrder.filter(r => validRarities.includes(r as Rarity));
+              const missingRarities = validRarities.filter(r => !existingRarities.includes(r));
+              parsed.player.automation.cleaningBot.priority.rarityOrder = [...existingRarities, ...missingRarities] as Rarity[];
+              
+              // Filter to only valid categories and add any missing ones at the end
+              const existingCategories = priority.categoryOrder.filter(c => validCategories.includes(c as ItemCategory));
+              const missingCategories = validCategories.filter(c => !existingCategories.includes(c));
+              parsed.player.automation.cleaningBot.priority.categoryOrder = [...existingCategories, ...missingCategories] as ItemCategory[];
+              
+              // Ensure lastProcessedTime exists
+              if (typeof bot.lastProcessedTime !== 'number') {
+                parsed.player.automation.cleaningBot.lastProcessedTime = 0;
+              }
+            }
+          }
         }
+
+        // Migration: ensure helpers exist and include a valid primary helper
         const isValidHelper = (h: unknown): h is HelperRobot => {
           if (!isRecord(h)) return false;
           return (
