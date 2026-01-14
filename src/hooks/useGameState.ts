@@ -9,9 +9,12 @@ import {
   InventoryItem,
   CleaningJob,
   Rarity,
+  ItemCategory,
   HelperRobot,
   Bag,
   TerrainTile,
+  CleaningBot,
+  CleaningBotPriority,
   BASIC_BATTERY_CAPACITY,
   BASIC_STORAGE_WIDTH,
   BASIC_STORAGE_HEIGHT,
@@ -77,6 +80,9 @@ function createInitialPlayerState(): PlayerState {
     playerX: 0,
     playerY: 0,
     currentCharge: BASIC_BATTERY_CAPACITY,
+    automation: {
+      cleaningBot: null,
+    },
   };
 }
 
@@ -500,7 +506,10 @@ export function useGameState() {
 
         parsed.player.cleaningJobs = (parsed.player.cleaningJobs as unknown[]).filter(isValidCleaningJob);
 
-        // Migration: ensure helpers exist and include a valid primary helper
+        // Migration: ensure automation state exists
+        if (!parsed.player.automation || typeof parsed.player.automation !== 'object') {
+          parsed.player.automation = { cleaningBot: null };
+        }
         const isValidHelper = (h: unknown): h is HelperRobot => {
           if (!isRecord(h)) return false;
           return (
@@ -1762,6 +1771,7 @@ export function useGameState() {
     const itemSeed = pileSeed + pile.x * 1000 + pile.y;
     return generateLoot(itemSeed);
   }, [gameState?.junkyard?.seed]);
+
   // Buy an item from the shop
   const buyShopItem = useCallback((itemId: string) => {
     const shopItem = shopInventory.find(si => si.item.id === itemId);
@@ -1802,6 +1812,229 @@ export function useGameState() {
     }
   }, [shopInventory, shopRefreshTime]);
 
+  // ============ AUTOMATION FUNCTIONS ============
+
+  // Default priority settings
+  const DEFAULT_RARITY_ORDER: Rarity[] = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
+  const DEFAULT_CATEGORY_ORDER: ItemCategory[] = ['component', 'module', 'battery', 'mobility', 'storage', 'scrap', 'junk'];
+
+  // Craft the cleaning bot
+  const craftCleaningBot = useCallback(() => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      if (prev.player.automation.cleaningBot) return prev; // Already have one
+      
+      // Check currency (350)
+      if (prev.player.currency < 350) return prev;
+      
+      // Check ingredients
+      const ingredients = [
+        { name: 'Circuit Board', quantity: 3 },
+        { name: 'Motor Unit', quantity: 2 },
+        { name: 'Copper Wire', quantity: 4 },
+        { name: 'Broken Gear', quantity: 3 },
+      ];
+      
+      if (!hasIngredients(prev.player.stash, ingredients)) return prev;
+      
+      // Consume ingredients
+      const newStash = consumeIngredients(prev.player.stash, ingredients);
+      
+      // Create the cleaning bot
+      const cleaningBot: CleaningBot = {
+        id: uuidv4(),
+        isActive: true,
+        priority: {
+          rarityOrder: DEFAULT_RARITY_ORDER,
+          categoryOrder: DEFAULT_CATEGORY_ORDER,
+        },
+        lastProcessedTime: Date.now(),
+      };
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          currency: prev.player.currency - 350,
+          stash: newStash,
+          automation: {
+            ...prev.player.automation,
+            cleaningBot,
+          },
+        },
+      };
+    });
+  }, []);
+
+  // Toggle cleaning bot active state
+  const toggleCleaningBot = useCallback((active: boolean) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      if (!prev.player.automation.cleaningBot) return prev;
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          automation: {
+            ...prev.player.automation,
+            cleaningBot: {
+              ...prev.player.automation.cleaningBot,
+              isActive: active,
+            },
+          },
+        },
+      };
+    });
+  }, []);
+
+  // Update cleaning bot priorities
+  const updateCleaningBotPriorities = useCallback((priority: CleaningBotPriority) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      if (!prev.player.automation.cleaningBot) return prev;
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          automation: {
+            ...prev.player.automation,
+            cleaningBot: {
+              ...prev.player.automation.cleaningBot,
+              priority,
+            },
+          },
+        },
+      };
+    });
+  }, []);
+
+  // Process auto-cleaning when returning to base
+  const processAutoCleaning = useCallback((state: GameState): GameState => {
+    const bot = state.player.automation.cleaningBot;
+    if (!bot || !bot.isActive) return state;
+    
+    const maxSlots = 1 + state.player.baseUpgrades.cleaningSlots;
+    const availableSlots = maxSlots - state.player.cleaningJobs.length;
+    if (availableSlots <= 0) return state;
+    
+    // Get dirty items from stash
+    const dirtyItems = state.player.stash.filter(item => item.isDirty);
+    if (dirtyItems.length === 0) return state;
+    
+    // Sort by priority
+    const { rarityOrder, categoryOrder } = bot.priority;
+    
+    const sortedDirty = [...dirtyItems].sort((a, b) => {
+      // First sort by rarity priority
+      const rarityA = rarityOrder.indexOf(a.rarity);
+      const rarityB = rarityOrder.indexOf(b.rarity);
+      if (rarityA !== rarityB) return rarityA - rarityB;
+      
+      // Then by category priority
+      const categoryA = categoryOrder.indexOf(a.category);
+      const categoryB = categoryOrder.indexOf(b.category);
+      return categoryA - categoryB;
+    });
+    
+    // Take items to auto-clean (limited by available slots)
+    const itemsToClean = sortedDirty.slice(0, availableSlots);
+    if (itemsToClean.length === 0) return state;
+    
+    // Calculate cleaning speed multiplier
+    const speedMultiplier = 1 + state.player.baseUpgrades.cleaningSpeed * 0.2;
+    
+    // Create cleaning jobs for these items
+    const newJobs: CleaningJob[] = itemsToClean.map(item => ({
+      jobId: uuidv4(),
+      itemId: item.id,
+      item: { ...item },
+      startTime: Date.now(),
+      duration: getCleaningDuration(item, speedMultiplier),
+    }));
+    
+    // Remove items from stash and add to cleaning jobs
+    const itemIdsToRemove = new Set(itemsToClean.map(i => i.id));
+    const newStash = state.player.stash.filter(i => !itemIdsToRemove.has(i.id));
+    
+    return {
+      ...state,
+      player: {
+        ...state.player,
+        stash: newStash,
+        cleaningJobs: [...state.player.cleaningJobs, ...newJobs],
+        automation: {
+          ...state.player.automation,
+          cleaningBot: {
+            ...bot,
+            lastProcessedTime: Date.now(),
+          },
+        },
+      },
+    };
+  }, []);
+
+  // Enhanced returnToBase with auto-cleaning
+  const returnToBaseWithAutoCleaning = useCallback((shouldRecharge: boolean = false) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const primary = getPrimaryHelper(prev.player);
+      const maxCapacity = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
+      
+      let newState: GameState;
+      
+      if (!shouldRecharge) {
+        // Just return without recharging
+        newState = {
+          ...prev,
+          player: { 
+            ...prev.player, 
+            currentYardId: null,
+          },
+        };
+      } else {
+        // Calculate recharge cost
+        const chargeNeeded = maxCapacity - prev.player.currentCharge;
+        const chargerLevel = prev.player.baseUpgrades.chargerEfficiency ?? 0;
+        const chargingCost = getChargingCost(chargeNeeded, chargerLevel);
+        
+        // Check if player can afford it
+        if (prev.player.currency < chargingCost) {
+          // Can't afford full recharge - charge as much as possible
+          const costPerUnit = UPGRADES.chargerEfficiency.getValue(chargerLevel);
+          const affordableCharge = Math.floor(prev.player.currency / costPerUnit);
+          const actualCharge = Math.min(affordableCharge, chargeNeeded);
+          const actualCost = getChargingCost(actualCharge, chargerLevel);
+          
+          newState = {
+            ...prev,
+            player: { 
+              ...prev.player, 
+              currentYardId: null,
+              currentCharge: prev.player.currentCharge + actualCharge,
+              currency: prev.player.currency - actualCost,
+            },
+          };
+        } else {
+          newState = {
+            ...prev,
+            player: { 
+              ...prev.player, 
+              currentYardId: null,
+              currentCharge: maxCapacity,
+              currency: prev.player.currency - chargingCost,
+            },
+          };
+        }
+      }
+      
+      // Process auto-cleaning after returning to base
+      return processAutoCleaning(newState);
+    });
+  }, [getChargingCost, processAutoCleaning]);
+
   return {
     gameState,
     isLoading,
@@ -1815,7 +2048,7 @@ export function useGameState() {
     movePlayer,
     getCurrentPile,
     searchPile,
-    returnToBase,
+    returnToBase: returnToBaseWithAutoCleaning,
     moveToNextJunkyard,
     startCleaning,
     collectCleanedItem,
@@ -1837,5 +2070,9 @@ export function useGameState() {
     shopInventory,
     shopRefreshTime,
     buyShopItem,
+    // Automation
+    craftCleaningBot,
+    toggleCleaningBot,
+    updateCleaningBotPriorities,
   };
 }

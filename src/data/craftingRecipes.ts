@@ -304,6 +304,24 @@ export const MOBILITY_RECIPES: CraftingRecipe[] = [
   },
 ];
 
+// Automation bot recipes
+export const AUTOMATION_RECIPES: CraftingRecipe[] = [
+  {
+    id: 'automation_cleaning_bot',
+    name: 'Cleaning Bot',
+    category: 'module', // Using module as the category type
+    icon: '🤖',
+    description: 'Automates cleaning while you scavenge. Set priorities by rarity and type.',
+    ingredients: [
+      { name: 'Circuit Board', quantity: 3 },
+      { name: 'Motor Unit', quantity: 2 },
+      { name: 'Copper Wire', quantity: 4 },
+      { name: 'Broken Gear', quantity: 3 },
+    ],
+    currencyCost: 350,
+  },
+];
+
 // General module recipes (scanner, cleaning assist, solar panels, pile scanners)
 export const MODULE_RECIPES: CraftingRecipe[] = [
   {

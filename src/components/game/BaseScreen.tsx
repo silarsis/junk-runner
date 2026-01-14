@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Battery, Bot, Zap, RotateCcw, Store } from 'lucide-react';
+import { Coins, Package, Wrench, ShoppingBag, ArrowUp, Map, Battery, Bot, Zap, RotateCcw, Cog } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameState, Bag } from '@/types/game';
 import { UPGRADES } from '@/data/upgradeData';
@@ -14,6 +14,7 @@ interface BaseScreenProps {
   onOpenSell: () => void;
   onOpenUpgrades: () => void;
   onOpenWorkshop: () => void;
+  onOpenAutomation: () => void;
   onOpenStash: () => void;
   onOpenScavenge: () => void;
   onTransferToStash: () => void;
@@ -30,6 +31,7 @@ export function BaseScreen({
   onOpenSell,
   onOpenUpgrades,
   onOpenWorkshop,
+  onOpenAutomation,
   onOpenStash,
   onOpenScavenge,
   onTransferToStash,
@@ -299,6 +301,21 @@ export function BaseScreen({
             initial={{ opacity: 0, x: 20 }}
             animate={{ opacity: 1, x: 0 }}
             transition={{ delay: 0.5 }}
+          >
+            <Button
+              variant="nav"
+              className="w-full h-16 flex-col gap-1"
+              onClick={onOpenAutomation}
+            >
+              <Cog className="w-5 h-5" />
+              <span className="text-xs">Automation</span>
+            </Button>
+          </motion.div>
+
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ delay: 0.55 }}
           >
             <Button
               variant="nav"
