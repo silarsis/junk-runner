@@ -206,6 +206,24 @@ export interface BaseUpgrades {
   baseRechargeRate: number; // passive recharge at base (seconds per 1 charge)
 }
 
+// Cleaning bot priority settings
+export interface CleaningBotPriority {
+  // Priority order: lower index = higher priority
+  rarityOrder: Rarity[];
+  categoryOrder: ItemCategory[];
+}
+
+export interface CleaningBot {
+  id: string;
+  isActive: boolean;
+  priority: CleaningBotPriority;
+  lastProcessedTime: number; // timestamp of last auto-clean run
+}
+
+export interface AutomationState {
+  cleaningBot: CleaningBot | null;
+}
+
 export interface PlayerState {
   currency: number;
   stash: Item[];
@@ -216,6 +234,7 @@ export interface PlayerState {
   playerX: number;
   playerY: number;
   currentCharge: number; // Current battery charge for active helper
+  automation: AutomationState;
 }
 
 export interface GameState {

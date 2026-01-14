@@ -8,6 +8,7 @@ import { CleaningScreen } from '@/components/game/CleaningScreen';
 import { ShopScreen } from '@/components/game/ShopScreen';
 import { UpgradesScreen } from '@/components/game/UpgradesScreen';
 import { WorkshopScreen } from '@/components/game/WorkshopScreen';
+import { AutomationScreen } from '@/components/game/AutomationScreen';
 import { StashModal } from '@/components/game/StashModal';
 import { ScavengeScreen } from '@/components/game/ScavengeScreen';
 import { FoundItemsAlert } from '@/components/game/FoundItemsAlert';
@@ -17,7 +18,7 @@ import { TerminalIntroScreen } from '@/components/game/TerminalIntroScreen';
 
 const INTRO_SEEN_KEY = 'junkrunner_intro_seen';
 
-type Screen = 'base' | 'junkyard' | 'cleaning' | 'shop' | 'upgrades' | 'workshop' | 'scavenge';
+type Screen = 'base' | 'junkyard' | 'cleaning' | 'shop' | 'upgrades' | 'workshop' | 'automation' | 'scavenge';
 
 const Index = () => {
   const {
@@ -54,6 +55,9 @@ const Index = () => {
     shopInventory,
     shopRefreshTime,
     buyShopItem,
+    craftCleaningBot,
+    toggleCleaningBot,
+    updateCleaningBotPriorities,
   } = useGameState();
 
   // Show terrain toast when stepping on terrain
@@ -157,6 +161,7 @@ const Index = () => {
             onOpenSell={() => setCurrentScreen('shop')}
             onOpenUpgrades={() => setCurrentScreen('upgrades')}
             onOpenWorkshop={() => setCurrentScreen('workshop')}
+            onOpenAutomation={() => setCurrentScreen('automation')}
             onOpenStash={() => setShowStash(true)}
             onOpenScavenge={() => setCurrentScreen('scavenge')}
             onTransferToStash={transferToStash}
@@ -243,6 +248,19 @@ const Index = () => {
             onBuildFrame={buildFrame}
             onRepairComponent={repairComponent}
             getRepairCost={getRepairCost}
+          />
+        )}
+
+        {currentScreen === 'automation' && (
+          <AutomationScreen
+            key="automation"
+            currency={gameState.player.currency}
+            stash={gameState.player.stash}
+            cleaningBot={gameState.player.automation.cleaningBot}
+            onClose={() => setCurrentScreen('base')}
+            onCraftCleaningBot={craftCleaningBot}
+            onToggleCleaningBot={toggleCleaningBot}
+            onUpdatePriorities={updateCleaningBotPriorities}
           />
         )}
       </AnimatePresence>
