@@ -30,7 +30,9 @@ import {
   createBasicStorage,
   createBasicMobility,
 } from '@/data/itemTemplates';
-import { generateJunkyard, isTilePassable, getTerrainAt } from '@/lib/terrainGenerator';
+import { generateJunkyard, isTilePassable, getTerrainAt, getEnemyAt } from '@/lib/terrainGenerator';
+import { processEnemyTurns, getAdjacentEnemies } from '@/lib/enemyAI';
+import { getEnemyDefinition, Enemy } from '@/types/enemies';
 import { HELPER_FRAMES, UPGRADES } from '@/data/upgradeData';
 import { CraftingRecipe, hasIngredients } from '@/data/craftingRecipes';
 import { TERRAIN_EFFECTS } from '@/components/game/TerrainToast';
@@ -1168,9 +1170,47 @@ export function useGameState() {
         }
       }
       
+      // Process enemy turns after player moves
+      let finalJunkyard = updatedJunkyard;
+      let enemyEncounter: Enemy | null = null;
+      
+      if (finalJunkyard.enemies && finalJunkyard.enemies.length > 0) {
+        const { updatedEnemies, playerCollision } = processEnemyTurns(
+          finalJunkyard,
+          finalX,
+          finalY
+        );
+        
+        finalJunkyard = { ...finalJunkyard, enemies: updatedEnemies };
+        enemyEncounter = playerCollision;
+        
+        // Check for adjacent enemies (for adjacency effects)
+        const adjacentEnemies = getAdjacentEnemies(updatedEnemies, finalX, finalY);
+        if (adjacentEnemies.length > 0) {
+          // Apply adjacency effects
+          for (const enemy of adjacentEnemies) {
+            const def = getEnemyDefinition(enemy.definitionId);
+            if (def?.adjacencyEffect?.includes('battery') || def?.adjacencyEffect?.includes('Drains')) {
+              // Drain extra battery for energy-draining enemies
+              newCharge = Math.max(0, newCharge - 2);
+            }
+          }
+        }
+        
+        // Handle direct collision with enemy
+        if (enemyEncounter) {
+          const def = getEnemyDefinition(enemyEncounter.definitionId);
+          if (def?.threatLevel === 'deadly') {
+            // Deadly enemies force return to base
+            // For now, just drain all battery
+            newCharge = 0;
+          }
+        }
+      }
+      
       return {
         ...prev,
-        junkyard: updatedJunkyard,
+        junkyard: finalJunkyard,
         player: { 
           ...prev.player, 
           playerX: finalX, 
@@ -1264,9 +1304,29 @@ export function useGameState() {
           }
         }
         
+        // Process enemy turns while searching
+        let updatedJunkyard = { ...prev.junkyard, piles: updatedPiles };
+        if (updatedJunkyard.enemies && updatedJunkyard.enemies.length > 0) {
+          const { updatedEnemies } = processEnemyTurns(
+            updatedJunkyard,
+            prev.player.playerX,
+            prev.player.playerY
+          );
+          updatedJunkyard = { ...updatedJunkyard, enemies: updatedEnemies };
+          
+          // Check for adjacent enemies draining battery
+          const adjacentEnemies = getAdjacentEnemies(updatedEnemies, prev.player.playerX, prev.player.playerY);
+          for (const enemy of adjacentEnemies) {
+            const def = getEnemyDefinition(enemy.definitionId);
+            if (def?.adjacencyEffect?.includes('battery') || def?.adjacencyEffect?.includes('Drains')) {
+              newCharge = Math.max(0, newCharge - 2);
+            }
+          }
+        }
+        
         return {
           ...prev,
-          junkyard: { ...prev.junkyard, piles: updatedPiles },
+          junkyard: updatedJunkyard,
           player: { 
             ...prev.player, 
             currentCharge: newCharge,
@@ -1290,9 +1350,29 @@ export function useGameState() {
           }
         }
         
+        // Process enemy turns while searching
+        let updatedJunkyard = { ...prev.junkyard, piles: updatedPiles };
+        if (updatedJunkyard.enemies && updatedJunkyard.enemies.length > 0) {
+          const { updatedEnemies } = processEnemyTurns(
+            updatedJunkyard,
+            prev.player.playerX,
+            prev.player.playerY
+          );
+          updatedJunkyard = { ...updatedJunkyard, enemies: updatedEnemies };
+          
+          // Check for adjacent enemies draining battery
+          const adjacentEnemies = getAdjacentEnemies(updatedEnemies, prev.player.playerX, prev.player.playerY);
+          for (const enemy of adjacentEnemies) {
+            const def = getEnemyDefinition(enemy.definitionId);
+            if (def?.adjacencyEffect?.includes('battery') || def?.adjacencyEffect?.includes('Drains')) {
+              newCharge = Math.max(0, newCharge - 2);
+            }
+          }
+        }
+        
         return {
           ...prev,
-          junkyard: { ...prev.junkyard, piles: updatedPiles },
+          junkyard: updatedJunkyard,
           player: { 
             ...prev.player, 
             currentCharge: newCharge,
