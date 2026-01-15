@@ -2,7 +2,8 @@ import { motion } from 'framer-motion';
 import { Search, Home, Package, Battery, BatteryWarning, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { GameState, JunkPile, Bag, HelperRobot, TerrainType, Item } from '@/types/game';
-import { isTilePassable, getWallAt, getTerrainAt, getBarrierAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
+import { getEnemyDefinition } from '@/types/enemies';
+import { isTilePassable, getWallAt, getTerrainAt, getBarrierAt, getEnemyAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
 
 type MovementType = 'basic' | 'diagonal' | 'jump' | 'extended';
@@ -238,6 +239,8 @@ export function JunkyardScreen({
               const wall = getWallAt(junkyard, x, y);
               const terrain = getTerrainAt(junkyard, x, y);
               const barrier = getBarrierAt(junkyard, x, y);
+              const enemy = getEnemyAt(junkyard, x, y);
+              const enemyDef = enemy ? getEnemyDefinition(enemy.definitionId) : null;
               const droppedItem = junkyard.droppedItems.find(d => d.x === x && d.y === y);
               const isTarget = isValidTarget(x, y);
               const isPassable = isTilePassable(junkyard, x, y);
@@ -331,8 +334,28 @@ export function JunkyardScreen({
                   })()}
                   
                   {/* Dropped item */}
-                  {isRevealed && droppedItem && !pile && !wall && (
+                  {isRevealed && droppedItem && !pile && !wall && !enemy && (
                     <span className="text-xs sm:text-sm">{droppedItem.item.icon}</span>
+                  )}
+                  
+                  {/* Enemy */}
+                  {isRevealed && enemy && enemyDef && !wall && (
+                    <motion.div
+                      className={cn(
+                        "absolute inset-0.5 rounded-sm flex items-center justify-center",
+                        enemyDef.threatLevel === 'nuisance' && "bg-yellow-500/20 ring-1 ring-yellow-500/40",
+                        enemyDef.threatLevel === 'moderate' && "bg-orange-500/20 ring-1 ring-orange-500/40",
+                        enemyDef.threatLevel === 'dangerous' && "bg-red-500/20 ring-1 ring-red-500/40",
+                        enemyDef.threatLevel === 'deadly' && "bg-red-700/30 ring-2 ring-red-600/60",
+                        enemy.isAlerted && "animate-pulse"
+                      )}
+                      initial={{ scale: 0 }}
+                      animate={{ scale: 1 }}
+                      transition={{ type: 'spring', damping: 15 }}
+                      title={`${enemyDef.name} - ${enemyDef.description}`}
+                    >
+                      <span className="text-base sm:text-lg">{enemyDef.icon}</span>
+                    </motion.div>
                   )}
                   
                   {/* Player */}
