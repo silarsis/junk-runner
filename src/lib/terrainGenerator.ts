@@ -414,6 +414,7 @@ export function generateJunkyard(seed: number, configOverrides?: Partial<Terrain
 
 // Get enemy at position
 export function getEnemyAt(junkyard: Junkyard, x: number, y: number): Enemy | null {
+  if (!junkyard.enemies) return null;
   return junkyard.enemies.find(e => e.x === x && e.y === y) || null;
 }
 
