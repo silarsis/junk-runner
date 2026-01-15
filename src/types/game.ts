@@ -137,6 +137,8 @@ export interface BarrierTile {
   requiresModule?: string;
 }
 
+import { Enemy } from './enemies';
+
 export interface Junkyard {
   yardId: string;
   seed: number;
@@ -149,6 +151,7 @@ export interface Junkyard {
   terrain: TerrainTile[];
   barriers: BarrierTile[]; // Soft gates
   droppedItems: DroppedItem[];
+  enemies: Enemy[]; // Active enemies in the junkyard
 }
 
 export interface Bag {

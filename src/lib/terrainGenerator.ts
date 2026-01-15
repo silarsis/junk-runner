@@ -1,8 +1,8 @@
 import { v4 as uuidv4 } from 'uuid';
 import { Junkyard, JunkPile, WallTile, TerrainTile, TerrainType, BarrierTile } from '@/types/game';
+import { Enemy, EnemyDefinition, getEnemyDefinitionsForBiome } from '@/types/enemies';
 import { WALL_ICONS } from '@/data/itemTemplates';
 import { Biome, getBiomeFromSeed, pickBiomeTerrain, pickBiomeBarrier, pickBiomeWall } from '@/data/biomes';
-
 // Legacy terrain config for fallback (when no biome)
 export const LEGACY_TERRAIN_CONFIG: Partial<Record<TerrainType, { icon: string; weight: number }>> = {
   mud: { icon: '🟤', weight: 25 },
@@ -257,6 +257,115 @@ function generateBarriers(
   return barriers;
 }
 
+// Generate enemies based on biome
+function generateEnemies(
+  random: () => number,
+  config: TerrainConfig,
+  usedPositions: Set<string>,
+  biome: Biome
+): Enemy[] {
+  const enemies: Enemy[] = [];
+  const definitions = getEnemyDefinitionsForBiome(biome.id);
+  if (definitions.length === 0) return enemies;
+  
+  // Start with 3-5 enemies, scaling with map size
+  const enemyCount = 3 + Math.floor(random() * 3);
+  
+  // Calculate total spawn weight
+  const totalWeight = definitions.reduce((sum, def) => sum + def.spawnWeight, 0);
+  
+  for (let i = 0; i < enemyCount; i++) {
+    // Pick enemy type based on weighted random
+    let roll = random() * totalWeight;
+    let selectedDef: EnemyDefinition | null = null;
+    
+    for (const def of definitions) {
+      roll -= def.spawnWeight;
+      if (roll <= 0) {
+        selectedDef = def;
+        break;
+      }
+    }
+    
+    if (!selectedDef) continue;
+    
+    // Find spawn position (not in spawn zone, not on walls)
+    let attempts = 0;
+    let x: number, y: number;
+    
+    do {
+      x = Math.floor(random() * config.width);
+      y = Math.floor(random() * config.height);
+      attempts++;
+    } while (
+      (usedPositions.has(`${x},${y}`) || isInSpawnZone(x, y, config) || 
+       // Keep enemies away from spawn - at least 4 tiles
+       (x < 4 && y < 4)) && 
+      attempts < 50
+    );
+    
+    if (attempts < 50) {
+      // Generate patrol route for patrol behaviour
+      let patrolRoute: { x: number; y: number }[] | undefined;
+      if (selectedDef.behaviour === 'patrol' && selectedDef.patrolLength) {
+        patrolRoute = generatePatrolRoute(x, y, selectedDef.patrolLength, config, random);
+      }
+      
+      enemies.push({
+        id: uuidv4(),
+        definitionId: selectedDef.id,
+        x,
+        y,
+        patrolRoute,
+        patrolIndex: 0,
+        patrolDirection: 1,
+        isAlerted: false,
+        turnsStationary: 0,
+      });
+    }
+  }
+  
+  return enemies;
+}
+
+// Generate a patrol route for patrol-type enemies
+function generatePatrolRoute(
+  startX: number,
+  startY: number,
+  length: number,
+  config: TerrainConfig,
+  random: () => number
+): { x: number; y: number }[] {
+  const route: { x: number; y: number }[] = [{ x: startX, y: startY }];
+  let currentX = startX;
+  let currentY = startY;
+  
+  const directions = [
+    { dx: 1, dy: 0 },
+    { dx: -1, dy: 0 },
+    { dx: 0, dy: 1 },
+    { dx: 0, dy: -1 },
+  ];
+  
+  for (let i = 1; i < length; i++) {
+    // Pick a random valid direction
+    const validDirs = directions.filter(d => {
+      const nx = currentX + d.dx;
+      const ny = currentY + d.dy;
+      return nx >= 0 && nx < config.width && ny >= 0 && ny < config.height;
+    });
+    
+    if (validDirs.length === 0) break;
+    
+    const dir = validDirs[Math.floor(random() * validDirs.length)];
+    currentX += dir.dx;
+    currentY += dir.dy;
+    route.push({ x: currentX, y: currentY });
+  }
+  
+  return route;
+}
+
 // Main junkyard generation function with biome support
 export function generateJunkyard(seed: number, configOverrides?: Partial<TerrainConfig>): Junkyard {
   const biome = getBiomeFromSeed(seed);
@@ -285,6 +394,7 @@ export function generateJunkyard(seed: number, configOverrides?: Partial<Terrain
   const barriers = generateBarriers(random, config, usedPositions, biome);
   const terrain = generateTerrain(random, config, usedPositions, biome);
   const piles = generatePiles(random, config, usedPositions);
+  const enemies = generateEnemies(random, config, usedPositions, biome);
   
   return {
     yardId: uuidv4(),
@@ -298,7 +408,13 @@ export function generateJunkyard(seed: number, configOverrides?: Partial<Terrain
     terrain,
     barriers,
     droppedItems: [],
+    enemies,
   };
+}
+
+// Get enemy at position
+export function getEnemyAt(junkyard: Junkyard, x: number, y: number): Enemy | null {
+  return junkyard.enemies.find(e => e.x === x && e.y === y) || null;
 }
 
 // Check if a tile is passable (not a wall or impassable barrier)
