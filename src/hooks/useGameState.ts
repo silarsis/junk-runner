@@ -412,6 +412,126 @@ export function useGameState() {
     const intervalId = setInterval(checkRefresh, 60 * 1000);
     return () => clearInterval(intervalId);
   }, [shopRefreshTime]);
+
+  // Cleaning bot automation - runs every second to auto-collect and queue items
+  useEffect(() => {
+    if (!gameState) return;
+    
+    const bot = gameState.player.automation.cleaningBot;
+    if (!bot || !bot.isActive) return;
+    
+    const processCleaningBot = () => {
+      setGameState(prev => {
+        if (!prev) return prev;
+        
+        const currentBot = prev.player.automation.cleaningBot;
+        if (!currentBot || !currentBot.isActive) return prev;
+        
+        const now = Date.now();
+        let newStash = [...prev.player.stash];
+        let newJobs = [...prev.player.cleaningJobs];
+        let hasChanges = false;
+        
+        // Step 1: Auto-collect completed cleaning jobs
+        const completedJobs = newJobs.filter(job => {
+          const elapsed = now - job.startTime;
+          return elapsed >= job.duration;
+        });
+        
+        if (completedJobs.length > 0) {
+          hasChanges = true;
+          
+          // Move completed items to stash (cleaned)
+          for (const job of completedJobs) {
+            const cleanedItem: Item = {
+              ...job.item,
+              isDirty: false,
+            };
+            newStash.push(cleanedItem);
+          }
+          
+          // Remove completed jobs
+          const completedIds = new Set(completedJobs.map(j => j.jobId));
+          newJobs = newJobs.filter(j => !completedIds.has(j.jobId));
+        }
+        
+        // Step 2: Queue new dirty items if slots are available
+        const maxSlots = 1 + prev.player.baseUpgrades.cleaningSlots;
+        const availableSlots = maxSlots - newJobs.length;
+        
+        if (availableSlots > 0) {
+          // Get dirty items from stash (use newStash since we may have just added items)
+          const dirtyItems = newStash.filter(item => item.isDirty);
+          
+          if (dirtyItems.length > 0) {
+            // Sort by priority
+            const { rarityOrder, categoryOrder } = currentBot.priority;
+            
+            const sortedDirty = [...dirtyItems].sort((a, b) => {
+              const rarityA = rarityOrder.indexOf(a.rarity);
+              const rarityB = rarityOrder.indexOf(b.rarity);
+              if (rarityA !== rarityB) return rarityA - rarityB;
+              
+              const categoryA = categoryOrder.indexOf(a.category);
+              const categoryB = categoryOrder.indexOf(b.category);
+              return categoryA - categoryB;
+            });
+            
+            // Take items to auto-clean (limited by available slots)
+            const itemsToClean = sortedDirty.slice(0, availableSlots);
+            
+            if (itemsToClean.length > 0) {
+              hasChanges = true;
+              
+              // Calculate cleaning speed multiplier
+              const speedMultiplier = 1 + prev.player.baseUpgrades.cleaningSpeed * 0.2;
+              
+              // Create cleaning jobs
+              const newCleaningJobs: CleaningJob[] = itemsToClean.map(item => ({
+                jobId: uuidv4(),
+                itemId: item.id,
+                item: { ...item },
+                startTime: now,
+                duration: getCleaningDuration(item, speedMultiplier),
+              }));
+              
+              // Remove items from stash
+              const itemIdsToRemove = new Set(itemsToClean.map(i => i.id));
+              newStash = newStash.filter(i => !itemIdsToRemove.has(i.id));
+              
+              // Add new jobs
+              newJobs = [...newJobs, ...newCleaningJobs];
+            }
+          }
+        }
+        
+        if (!hasChanges) return prev;
+        
+        return {
+          ...prev,
+          player: {
+            ...prev.player,
+            stash: newStash,
+            cleaningJobs: newJobs,
+            automation: {
+              ...prev.player.automation,
+              cleaningBot: {
+                ...currentBot,
+                lastProcessedTime: now,
+              },
+            },
+          },
+        };
+      });
+    };
+    
+    // Run immediately and then every second
+    processCleaningBot();
+    const intervalId = setInterval(processCleaningBot, 1000);
+    
+    return () => clearInterval(intervalId);
+  }, [gameState?.player.automation.cleaningBot?.isActive]);
+
   // Load game state
   useEffect(() => {
     const saved = localStorage.getItem(STORAGE_KEY);
