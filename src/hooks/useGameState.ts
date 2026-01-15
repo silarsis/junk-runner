@@ -1,4 +1,5 @@
-import { useState, useEffect, useCallback, useMemo } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
+import { toast } from '@/hooks/use-toast';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   GameState, 
@@ -414,6 +415,10 @@ export function useGameState() {
   }, [shopRefreshTime]);
 
   // Cleaning bot automation - runs every second to auto-collect and queue items
+  // Use refs to track notifications without causing re-renders
+  const lastCollectedRef = useRef<string[]>([]);
+  const lastQueuedRef = useRef<string[]>([]);
+  
   useEffect(() => {
     if (!gameState) return;
     
@@ -421,6 +426,9 @@ export function useGameState() {
     if (!bot || !bot.isActive) return;
     
     const processCleaningBot = () => {
+      let collectedItems: string[] = [];
+      let queuedItems: string[] = [];
+      
       setGameState(prev => {
         if (!prev) return prev;
         
@@ -440,6 +448,9 @@ export function useGameState() {
         
         if (completedJobs.length > 0) {
           hasChanges = true;
+          
+          // Track collected items for notification
+          collectedItems = completedJobs.map(job => job.item.name);
           
           // Move completed items to stash (cleaned)
           for (const job of completedJobs) {
@@ -483,6 +494,9 @@ export function useGameState() {
             if (itemsToClean.length > 0) {
               hasChanges = true;
               
+              // Track queued items for notification
+              queuedItems = itemsToClean.map(i => i.name);
+              
               // Calculate cleaning speed multiplier
               const speedMultiplier = 1 + prev.player.baseUpgrades.cleaningSpeed * 0.2;
               
@@ -523,6 +537,29 @@ export function useGameState() {
           },
         };
       });
+      
+      // Show toast notifications after state update (outside setGameState)
+      if (collectedItems.length > 0) {
+        const itemList = collectedItems.length <= 2 
+          ? collectedItems.join(', ') 
+          : `${collectedItems.slice(0, 2).join(', ')} +${collectedItems.length - 2} more`;
+        toast({
+          title: "🤖 Bot: Cleaned",
+          description: itemList,
+          duration: 3000,
+        });
+      }
+      
+      if (queuedItems.length > 0) {
+        const itemList = queuedItems.length <= 2 
+          ? queuedItems.join(', ') 
+          : `${queuedItems.slice(0, 2).join(', ')} +${queuedItems.length - 2} more`;
+        toast({
+          title: "🤖 Bot: Queued for cleaning",
+          description: itemList,
+          duration: 3000,
+        });
+      }
     };
     
     // Run immediately and then every second
