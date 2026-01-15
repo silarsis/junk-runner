@@ -33,6 +33,12 @@ import {
 import { generateJunkyard, isTilePassable, getTerrainAt, getEnemyAt } from '@/lib/terrainGenerator';
 import { processEnemyTurns, getAdjacentEnemies } from '@/lib/enemyAI';
 import { getEnemyDefinition, Enemy } from '@/types/enemies';
+import { 
+  showEnemyEncounterToast, 
+  getCollisionEffects, 
+  getAdjacencyEffects,
+  showAdjacencyWarningToast,
+} from '@/components/game/EnemyEncounterToast';
 import { HELPER_FRAMES, UPGRADES } from '@/data/upgradeData';
 import { CraftingRecipe, hasIngredients } from '@/data/craftingRecipes';
 import { TERRAIN_EFFECTS } from '@/components/game/TerrainToast';
@@ -1186,32 +1192,96 @@ export function useGameState() {
         
         // Check for adjacent enemies (for adjacency effects)
         const adjacentEnemies = getAdjacentEnemies(updatedEnemies, finalX, finalY);
+        const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
+        let totalHelperDamage = 0;
+        let totalItemDamage = 0;
+        
         if (adjacentEnemies.length > 0) {
           // Apply adjacency effects
           for (const enemy of adjacentEnemies) {
             const def = getEnemyDefinition(enemy.definitionId);
-            if (def?.adjacencyEffect?.includes('battery') || def?.adjacencyEffect?.includes('Drains')) {
-              // Drain extra battery for energy-draining enemies
-              newCharge = Math.max(0, newCharge - 2);
+            if (!def) continue;
+            
+            const effects = getAdjacencyEffects(def, enemy.turnsStationary);
+            
+            if (effects.batteryDrain > 0) {
+              newCharge = Math.max(0, newCharge - effects.batteryDrain);
+              adjacencyDrainInfo.push({ definition: def, batteryDrain: effects.batteryDrain });
             }
+            
+            totalHelperDamage += effects.helperDamage || 0;
+            totalItemDamage += effects.itemDamage || 0;
+          }
+          
+          // Show adjacency warning if any drain occurred
+          if (adjacencyDrainInfo.length > 0) {
+            setTimeout(() => {
+              showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
+            }, 0);
           }
         }
         
         // Handle direct collision with enemy
         if (enemyEncounter) {
           const def = getEnemyDefinition(enemyEncounter.definitionId);
-          if (def?.threatLevel === 'deadly') {
-            // Deadly enemies force return to base
-            // For now, just drain all battery
-            newCharge = 0;
+          if (def) {
+            const collisionEffects = getCollisionEffects(def);
+            
+            // Apply collision battery drain
+            newCharge = Math.max(0, newCharge - (collisionEffects.batteryDrain || 0));
+            
+            // Accumulate damage
+            totalHelperDamage += collisionEffects.helperDamage || 0;
+            totalItemDamage += collisionEffects.itemDamage || 0;
+            
+            // Show encounter toast
+            setTimeout(() => {
+              showEnemyEncounterToast(collisionEffects);
+            }, 0);
+            
+            // Deadly enemies force immediate battery drain
+            if (collisionEffects.forcedReturn) {
+              newCharge = 0;
+            }
           }
+        }
+        
+        // Apply accumulated helper damage
+        if (totalHelperDamage > 0 && updatedPrimary) {
+          updatedHelpers = updatedHelpers.map(h => {
+            if (!h.isPrimary) return h;
+            return {
+              ...h,
+              components: {
+                ...h.components,
+                battery: h.components.battery 
+                  ? { ...h.components.battery, condition: Math.max(0, h.components.battery.condition - totalHelperDamage) }
+                  : null,
+                mobility: h.components.mobility
+                  ? { ...h.components.mobility, condition: Math.max(0, h.components.mobility.condition - totalHelperDamage) }
+                  : null,
+                modules: h.components.modules.map(m => 
+                  m ? { ...m, condition: Math.max(0, m.condition - totalHelperDamage) } : m
+                ),
+              },
+            };
+          });
+        }
+        
+        // Apply accumulated item damage to bag
+        if (totalItemDamage > 0) {
+          updatedBagItems = updatedBagItems.map(item => ({
+            ...item,
+            condition: Math.max(0, item.condition - totalItemDamage),
+          }));
+          setBagItems(updatedBagItems);
         }
       }
       
       return {
         ...prev,
         junkyard: finalJunkyard,
-        player: { 
+        player: {
           ...prev.player, 
           playerX: finalX, 
           playerY: finalY,
@@ -1314,13 +1384,25 @@ export function useGameState() {
           );
           updatedJunkyard = { ...updatedJunkyard, enemies: updatedEnemies };
           
-          // Check for adjacent enemies draining battery
+          // Check for adjacent enemies draining battery with proper effects
           const adjacentEnemies = getAdjacentEnemies(updatedEnemies, prev.player.playerX, prev.player.playerY);
+          const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
+          
           for (const enemy of adjacentEnemies) {
             const def = getEnemyDefinition(enemy.definitionId);
-            if (def?.adjacencyEffect?.includes('battery') || def?.adjacencyEffect?.includes('Drains')) {
-              newCharge = Math.max(0, newCharge - 2);
+            if (!def) continue;
+            
+            const effects = getAdjacencyEffects(def, enemy.turnsStationary);
+            if (effects.batteryDrain > 0) {
+              newCharge = Math.max(0, newCharge - effects.batteryDrain);
+              adjacencyDrainInfo.push({ definition: def, batteryDrain: effects.batteryDrain });
             }
+          }
+          
+          if (adjacencyDrainInfo.length > 0) {
+            setTimeout(() => {
+              showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
+            }, 0);
           }
         }
         
@@ -1360,13 +1442,25 @@ export function useGameState() {
           );
           updatedJunkyard = { ...updatedJunkyard, enemies: updatedEnemies };
           
-          // Check for adjacent enemies draining battery
+          // Check for adjacent enemies draining battery with proper effects
           const adjacentEnemies = getAdjacentEnemies(updatedEnemies, prev.player.playerX, prev.player.playerY);
+          const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
+          
           for (const enemy of adjacentEnemies) {
             const def = getEnemyDefinition(enemy.definitionId);
-            if (def?.adjacencyEffect?.includes('battery') || def?.adjacencyEffect?.includes('Drains')) {
-              newCharge = Math.max(0, newCharge - 2);
+            if (!def) continue;
+            
+            const effects = getAdjacencyEffects(def, enemy.turnsStationary);
+            if (effects.batteryDrain > 0) {
+              newCharge = Math.max(0, newCharge - effects.batteryDrain);
+              adjacencyDrainInfo.push({ definition: def, batteryDrain: effects.batteryDrain });
             }
+          }
+          
+          if (adjacencyDrainInfo.length > 0) {
+            setTimeout(() => {
+              showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
+            }, 0);
           }
         }
         

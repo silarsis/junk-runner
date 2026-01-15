@@ -90,6 +90,52 @@ function getValidMoveTargets(
   return validTargets;
 }
 
+// Get tiles within threat range of enemies
+function getEnemyThreatTiles(junkyard: GameState['junkyard']): Map<string, { threat: 'adjacent' | 'nearby'; color: string }> {
+  const threatTiles = new Map<string, { threat: 'adjacent' | 'nearby'; color: string }>();
+  if (!junkyard) return threatTiles;
+  
+  for (const enemy of junkyard.enemies) {
+    const def = getEnemyDefinition(enemy.definitionId);
+    if (!def) continue;
+    
+    // Get threat color based on threat level
+    const threatColor = 
+      def.threatLevel === 'deadly' ? 'bg-red-600/15' :
+      def.threatLevel === 'dangerous' ? 'bg-red-500/10' :
+      def.threatLevel === 'moderate' ? 'bg-orange-500/10' :
+      'bg-yellow-500/5';
+    
+    // Mark adjacent tiles (1 range) as dangerous
+    for (let dy = -1; dy <= 1; dy++) {
+      for (let dx = -1; dx <= 1; dx++) {
+        if (dx === 0 && dy === 0) continue;
+        const key = `${enemy.x + dx}-${enemy.y + dy}`;
+        const existing = threatTiles.get(key);
+        // Upgrade threat level if this is more dangerous
+        if (!existing || existing.threat === 'nearby') {
+          threatTiles.set(key, { threat: 'adjacent', color: threatColor });
+        }
+      }
+    }
+    
+    // For chasing/dangerous enemies, mark 2-range tiles as nearby threat
+    if (def.behaviour === 'chase' || def.threatLevel === 'dangerous' || def.threatLevel === 'deadly') {
+      for (let dy = -2; dy <= 2; dy++) {
+        for (let dx = -2; dx <= 2; dx++) {
+          if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue; // Skip adjacent
+          const key = `${enemy.x + dx}-${enemy.y + dy}`;
+          if (!threatTiles.has(key)) {
+            threatTiles.set(key, { threat: 'nearby', color: threatColor.replace('/15', '/5').replace('/10', '/5') });
+          }
+        }
+      }
+    }
+  }
+  
+  return threatTiles;
+}
+
 export function JunkyardScreen({
   gameState,
   maxBattery,
@@ -133,6 +179,7 @@ export function JunkyardScreen({
 
   const movementType = getMovementType(player.helpers);
   const validMoveTargets = getValidMoveTargets(player.playerX, player.playerY, movementType, junkyard);
+  const enemyThreatTiles = getEnemyThreatTiles(junkyard);
 
   const handleTileClick = (x: number, y: number) => {
     if (isBatteryEmpty) return;
@@ -244,6 +291,7 @@ export function JunkyardScreen({
               const droppedItem = junkyard.droppedItems.find(d => d.x === x && d.y === y);
               const isTarget = isValidTarget(x, y);
               const isPassable = isTilePassable(junkyard, x, y);
+              const threatInfo = enemyThreatTiles.get(`${x}-${y}`);
               
               // Spider legs can traverse walls
               const primary = player.helpers.find(h => h.isPrimary);
@@ -276,6 +324,17 @@ export function JunkyardScreen({
                   transition={{ duration: 0.2 }}
                   whileTap={canMoveTo ? { scale: 0.9 } : {}}
                 >
+                  {/* Enemy threat range overlay */}
+                  {isRevealed && threatInfo && !enemy && (
+                    <div 
+                      className={cn(
+                        "absolute inset-0 rounded-sm pointer-events-none",
+                        threatInfo.color,
+                        threatInfo.threat === 'adjacent' && "border border-red-500/20"
+                      )}
+                    />
+                  )}
+                  
                   {/* Terrain hazard indicator */}
                   {isRevealed && terrain && !wall && !pile && !barrier && (
                     <span className="absolute text-xs opacity-70">{terrain.icon}</span>
