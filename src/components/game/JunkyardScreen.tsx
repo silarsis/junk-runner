@@ -93,7 +93,7 @@ function getValidMoveTargets(
 // Get tiles within threat range of enemies
 function getEnemyThreatTiles(junkyard: GameState['junkyard']): Map<string, { threat: 'adjacent' | 'nearby'; color: string }> {
   const threatTiles = new Map<string, { threat: 'adjacent' | 'nearby'; color: string }>();
-  if (!junkyard) return threatTiles;
+  if (!junkyard || !junkyard.enemies) return threatTiles;
   
   for (const enemy of junkyard.enemies) {
     const def = getEnemyDefinition(enemy.definitionId);

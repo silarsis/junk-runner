@@ -774,6 +774,11 @@ export function useGameState() {
           }));
         }
 
+        // Migration: ensure junkyard enemies array exists
+        if (parsed.junkyard && !Array.isArray(parsed.junkyard.enemies)) {
+          parsed.junkyard.enemies = [];
+        }
+
         setGameState(parsed);
       } catch (err) {
         console.error('Failed to load save; resetting to fresh state.', err);
