@@ -262,14 +262,16 @@ function generateEnemies(
   random: () => number,
   config: TerrainConfig,
   usedPositions: Set<string>,
-  biome: Biome
+  biome: Biome,
+  playerMoney: number = 0
 ): Enemy[] {
   const enemies: Enemy[] = [];
   const definitions = getEnemyDefinitionsForBiome(biome.id);
   if (definitions.length === 0) return enemies;
   
-  // Start with 3-5 enemies, scaling with map size
-  const enemyCount = 3 + Math.floor(random() * 3);
+  // Enemy count scales with player wealth: money / 100, rounded up, max 8
+  const scaledCount = Math.min(8, Math.max(1, Math.ceil(playerMoney / 100)));
+  const enemyCount = scaledCount;
   
   // Calculate total spawn weight
   const totalWeight = definitions.reduce((sum, def) => sum + def.spawnWeight, 0);
@@ -367,7 +369,7 @@ function generatePatrolRoute(
 }
 
 // Main junkyard generation function with biome support
-export function generateJunkyard(seed: number, configOverrides?: Partial<TerrainConfig>): Junkyard {
+export function generateJunkyard(seed: number, configOverrides?: Partial<TerrainConfig>, playerMoney: number = 0): Junkyard {
   const biome = getBiomeFromSeed(seed);
   
   // Apply biome-specific density overrides
@@ -394,7 +396,7 @@ export function generateJunkyard(seed: number, configOverrides?: Partial<Terrain
   const barriers = generateBarriers(random, config, usedPositions, biome);
   const terrain = generateTerrain(random, config, usedPositions, biome);
   const piles = generatePiles(random, config, usedPositions);
-  const enemies = generateEnemies(random, config, usedPositions, biome);
+  const enemies = generateEnemies(random, config, usedPositions, biome, playerMoney);
   
   return {
     yardId: uuidv4(),

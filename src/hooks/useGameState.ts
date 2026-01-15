@@ -879,7 +879,7 @@ export function useGameState() {
       if (!junkyard) {
         // Use the stored seed for the junkyard
         const seed = prev.junkyardSeed;
-        junkyard = generateJunkyard(seed);
+        junkyard = generateJunkyard(seed, undefined, prev.player.currency);
         playerX = 0;
         playerY = 0;
       }
