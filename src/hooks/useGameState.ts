@@ -2446,6 +2446,7 @@ export function useGameState() {
   }, []);
 
   // Enhanced returnToBase with auto-cleaning
+  // If at entrance: saves junkyard state. If not at entrance: abandons junkyard.
   const returnToBaseWithAutoCleaning = useCallback((shouldRecharge: boolean = false) => {
     setGameState(prev => {
       if (!prev) return prev;
@@ -2453,15 +2454,29 @@ export function useGameState() {
       const primary = getPrimaryHelper(prev.player);
       const maxCapacity = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
       
+      // Check if player is at entrance - if so, preserve junkyard
+      const atEntrance = prev.infiniteJunkyard && 
+        prev.player.playerX === prev.infiniteJunkyard.entranceX && 
+        prev.player.playerY === prev.infiniteJunkyard.entranceY;
+      
+      // If not at entrance, abandon junkyard (wipe it and generate new seed)
+      const shouldAbandon = prev.infiniteJunkyard && !atEntrance;
+      const newSeed = shouldAbandon ? Date.now() : prev.junkyardSeed;
+      const newInfiniteJunkyard = shouldAbandon ? null : prev.infiniteJunkyard;
+      
       let newState: GameState;
       
       if (!shouldRecharge) {
         // Just return without recharging
         newState = {
           ...prev,
+          infiniteJunkyard: newInfiniteJunkyard,
+          junkyardSeed: newSeed,
           player: { 
             ...prev.player, 
             currentYardId: null,
+            playerX: 0,
+            playerY: 0,
           },
         };
       } else {
@@ -2480,9 +2495,13 @@ export function useGameState() {
           
           newState = {
             ...prev,
+            infiniteJunkyard: newInfiniteJunkyard,
+            junkyardSeed: newSeed,
             player: { 
               ...prev.player, 
               currentYardId: null,
+              playerX: 0,
+              playerY: 0,
               currentCharge: prev.player.currentCharge + actualCharge,
               currency: prev.player.currency - actualCost,
             },
@@ -2490,9 +2509,13 @@ export function useGameState() {
         } else {
           newState = {
             ...prev,
+            infiniteJunkyard: newInfiniteJunkyard,
+            junkyardSeed: newSeed,
             player: { 
               ...prev.player, 
               currentYardId: null,
+              playerX: 0,
+              playerY: 0,
               currentCharge: maxCapacity,
               currency: prev.player.currency - chargingCost,
             },
