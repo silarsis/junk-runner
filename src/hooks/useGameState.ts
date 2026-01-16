@@ -804,6 +804,14 @@ export function useGameState() {
           parsed.junkyard.enemies = [];
         }
 
+        // Migration: deserialize infiniteJunkyard chunks from object to Map
+        if (parsed.infiniteJunkyard && parsed.infiniteJunkyard.chunks) {
+          // Check if chunks is not already a Map (loaded from localStorage as object)
+          if (!(parsed.infiniteJunkyard.chunks instanceof Map)) {
+            parsed.infiniteJunkyard = deserializeInfiniteJunkyard(parsed.infiniteJunkyard);
+          }
+        }
+
         setGameState(parsed);
       } catch (err) {
         console.error('Failed to load save; resetting to fresh state.', err);
@@ -833,7 +841,14 @@ export function useGameState() {
   // Save game state
   useEffect(() => {
     if (gameState && !isLoading) {
-      const saveData = { ...gameState, bagItems };
+      // Serialize infiniteJunkyard's Map to plain object for localStorage
+      const saveData = {
+        ...gameState,
+        infiniteJunkyard: gameState.infiniteJunkyard 
+          ? serializeInfiniteJunkyard(gameState.infiniteJunkyard)
+          : null,
+        bagItems,
+      };
       try {
         localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
       } catch (err) {
