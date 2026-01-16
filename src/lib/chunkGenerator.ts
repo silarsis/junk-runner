@@ -442,6 +442,33 @@ export function createInfiniteJunkyard(baseSeed: number, playerMoney: number = 0
   };
 }
 
+// Safe chunk getter that works with both Map and plain object (for deserialization edge cases)
+export function getChunkSafe(junkyard: InfiniteJunkyard, key: string): JunkyardChunk | undefined {
+  const chunks = junkyard.chunks;
+  if (chunks instanceof Map) {
+    return chunks.get(key);
+  }
+  // Fallback for plain object (shouldn't happen but handles edge cases)
+  return (chunks as unknown as Record<string, JunkyardChunk>)[key];
+}
+
+// Safe chunk setter that works with both Map and plain object
+export function setChunkSafe(junkyard: InfiniteJunkyard, key: string, chunk: JunkyardChunk): InfiniteJunkyard {
+  const chunks = junkyard.chunks;
+  if (chunks instanceof Map) {
+    const newChunks = new Map(chunks);
+    newChunks.set(key, chunk);
+    return { ...junkyard, chunks: newChunks };
+  }
+  // Fallback for plain object - convert to Map
+  const newChunks = new Map<string, JunkyardChunk>();
+  Object.entries(chunks as unknown as Record<string, JunkyardChunk>).forEach(([k, v]) => {
+    newChunks.set(k, v);
+  });
+  newChunks.set(key, chunk);
+  return { ...junkyard, chunks: newChunks };
+}
+
 // Get or generate a chunk at given coordinates
 export function getOrGenerateChunk(
   junkyard: InfiniteJunkyard,
@@ -451,7 +478,7 @@ export function getOrGenerateChunk(
 ): { junkyard: InfiniteJunkyard; chunk: JunkyardChunk } {
   const key = makeChunkKey(chunkX, chunkY);
   
-  const existingChunk = junkyard.chunks.get(key);
+  const existingChunk = getChunkSafe(junkyard, key);
   if (existingChunk) {
     return { junkyard, chunk: existingChunk };
   }
@@ -460,11 +487,8 @@ export function getOrGenerateChunk(
   const biome = getBiomeFromSeed(junkyard.baseSeed);
   const newChunk = generateChunk(junkyard.baseSeed, chunkX, chunkY, biome, playerMoney);
   
-  const newChunks = new Map(junkyard.chunks);
-  newChunks.set(key, newChunk);
-  
   return {
-    junkyard: { ...junkyard, chunks: newChunks },
+    junkyard: setChunkSafe(junkyard, key, newChunk),
     chunk: newChunk,
   };
 }
@@ -499,9 +523,7 @@ export function revealTilesAroundWorld(
         }
         
         const updatedChunk = { ...chunk, revealedTiles: newRevealed };
-        const newChunks = new Map(updatedJunkyard.chunks);
-        newChunks.set(makeChunkKey(chunkX, chunkY), updatedChunk);
-        updatedJunkyard = { ...updatedJunkyard, chunks: newChunks };
+        updatedJunkyard = setChunkSafe(updatedJunkyard, makeChunkKey(chunkX, chunkY), updatedChunk);
       }
     }
   }
@@ -514,7 +536,7 @@ export function isWorldTilePassable(junkyard: InfiniteJunkyard, worldX: number, 
   const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   const { localX, localY } = worldToLocal(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   
-  const chunk = junkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+  const chunk = getChunkSafe(junkyard, makeChunkKey(chunkX, chunkY));
   if (!chunk) return true; // Unexplored chunks are passable by default
   
   // Check walls
@@ -535,7 +557,7 @@ export function getWorldWallAt(junkyard: InfiniteJunkyard, worldX: number, world
   const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   const { localX, localY } = worldToLocal(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   
-  const chunk = junkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+  const chunk = getChunkSafe(junkyard, makeChunkKey(chunkX, chunkY));
   if (!chunk) return null;
   
   return chunk.walls.find(w => w.x === localX && w.y === localY) || null;
@@ -546,7 +568,7 @@ export function getWorldTerrainAt(junkyard: InfiniteJunkyard, worldX: number, wo
   const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   const { localX, localY } = worldToLocal(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   
-  const chunk = junkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+  const chunk = getChunkSafe(junkyard, makeChunkKey(chunkX, chunkY));
   if (!chunk) return null;
   
   return chunk.terrain.find(t => t.x === localX && t.y === localY) || null;
@@ -557,7 +579,7 @@ export function getWorldBarrierAt(junkyard: InfiniteJunkyard, worldX: number, wo
   const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   const { localX, localY } = worldToLocal(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   
-  const chunk = junkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+  const chunk = getChunkSafe(junkyard, makeChunkKey(chunkX, chunkY));
   if (!chunk) return null;
   
   return chunk.barriers.find(b => b.x === localX && b.y === localY) || null;
@@ -568,7 +590,7 @@ export function getWorldEnemyAt(junkyard: InfiniteJunkyard, worldX: number, worl
   const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   const { localX, localY } = worldToLocal(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   
-  const chunk = junkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+  const chunk = getChunkSafe(junkyard, makeChunkKey(chunkX, chunkY));
   if (!chunk || !chunk.enemies) return null;
   
   return chunk.enemies.find(e => e.x === localX && e.y === localY) || null;
@@ -579,7 +601,7 @@ export function getWorldPileAt(junkyard: InfiniteJunkyard, worldX: number, world
   const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   const { localX, localY } = worldToLocal(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   
-  const chunk = junkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+  const chunk = getChunkSafe(junkyard, makeChunkKey(chunkX, chunkY));
   if (!chunk) return null;
   
   return chunk.piles.find(p => p.x === localX && p.y === localY) || null;

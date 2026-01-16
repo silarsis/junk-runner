@@ -53,6 +53,8 @@ import {
   isAtEntrance,
   getOrGenerateChunk,
   generateLootForChunk,
+  getChunkSafe,
+  setChunkSafe,
   CHUNK_WIDTH,
   CHUNK_HEIGHT,
 } from '@/lib/chunkGenerator';
@@ -1207,7 +1209,7 @@ export function useGameState() {
       // Process enemies in the current chunk
       const { chunkX, chunkY } = worldToChunk(finalX, finalY, CHUNK_WIDTH, CHUNK_HEIGHT);
       const { localX: playerLocalX, localY: playerLocalY } = worldToLocal(finalX, finalY, CHUNK_WIDTH, CHUNK_HEIGHT);
-      const currentChunk = updatedJunkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+      const currentChunk = getChunkSafe(updatedJunkyard, makeChunkKey(chunkX, chunkY));
       
       let enemyEncounter: Enemy | null = null;
       
@@ -1236,9 +1238,7 @@ export function useGameState() {
         
         // Update chunk with new enemy positions
         const updatedChunk = { ...currentChunk, enemies: updatedEnemies };
-        const newChunks = new Map(updatedJunkyard.chunks);
-        newChunks.set(makeChunkKey(chunkX, chunkY), updatedChunk);
-        updatedJunkyard = { ...updatedJunkyard, chunks: newChunks };
+        updatedJunkyard = setChunkSafe(updatedJunkyard, makeChunkKey(chunkX, chunkY), updatedChunk);
         
         enemyEncounter = playerCollision;
         
@@ -1354,7 +1354,7 @@ export function useGameState() {
       CHUNK_HEIGHT
     );
     
-    const chunk = gameState.infiniteJunkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+    const chunk = getChunkSafe(gameState.infiniteJunkyard, makeChunkKey(chunkX, chunkY));
     if (!chunk) return null;
     
     return chunk.piles.find(
@@ -1385,7 +1385,7 @@ export function useGameState() {
       );
       
       const chunkKey = makeChunkKey(chunkX, chunkY);
-      const chunk = prev.infiniteJunkyard.chunks.get(chunkKey);
+      const chunk = getChunkSafe(prev.infiniteJunkyard, chunkKey);
       if (!chunk) return prev;
       
       const pileIndex = chunk.piles.findIndex(
@@ -1494,10 +1494,8 @@ export function useGameState() {
           }
         }
         
-        // Update chunks map
-        const newChunks = new Map(updatedJunkyard.chunks);
-        newChunks.set(chunkKey, updatedChunk);
-        updatedJunkyard = { ...updatedJunkyard, chunks: newChunks };
+        // Update chunks
+        updatedJunkyard = setChunkSafe(updatedJunkyard, chunkKey, updatedChunk);
         
         return {
           ...prev,
@@ -1570,10 +1568,8 @@ export function useGameState() {
           }
         }
         
-        // Update chunks map
-        const newChunks = new Map(updatedJunkyard.chunks);
-        newChunks.set(chunkKey, updatedChunk);
-        updatedJunkyard = { ...updatedJunkyard, chunks: newChunks };
+        // Update chunks
+        updatedJunkyard = setChunkSafe(updatedJunkyard, chunkKey, updatedChunk);
         
         return {
           ...prev,
