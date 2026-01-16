@@ -171,7 +171,6 @@ export function CleaningScreen({
                   variant="steel"
                   size="sm"
                   onClick={() => onStartCleaning(item.id)}
-                  disabled={cleaningJobs.length >= maxSlots}
                 >
                   <Sparkles className="w-4 h-4" />
                   Clean
