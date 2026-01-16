@@ -1,14 +1,35 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
-import { Search, Home, Package, Battery, BatteryWarning, Eye } from 'lucide-react';
+import { Search, Home, Package, Battery, BatteryWarning, MapPin, Compass } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { GameState, JunkPile, Bag, HelperRobot, TerrainType, Item } from '@/types/game';
-import { getEnemyDefinition } from '@/types/enemies';
-import { isTilePassable, getWallAt, getTerrainAt, getBarrierAt, getEnemyAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
+import { GameState, JunkPile, Bag, HelperRobot, TerrainType, Item, Junkyard } from '@/types/game';
+import { getEnemyDefinition, Enemy } from '@/types/enemies';
+import { TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
+import { 
+  worldToChunk, 
+  worldToLocal, 
+  makeChunkKey,
+  getChunkDistance,
+} from '@/types/chunk';
+import {
+  CHUNK_WIDTH,
+  CHUNK_HEIGHT,
+  isWorldTilePassable,
+  getWorldWallAt,
+  getWorldTerrainAt,
+  getWorldBarrierAt,
+  getWorldEnemyAt,
+  getWorldPileAt,
+  isAtEntrance,
+} from '@/lib/chunkGenerator';
 import { cn } from '@/lib/utils';
 
+// Viewport size (tiles visible around player)
+const VIEWPORT_RADIUS = 5; // 11x11 viewport
+const VIEWPORT_SIZE = VIEWPORT_RADIUS * 2 + 1;
+
 // Hook to calculate responsive cell size based on screen dimensions
-function useResponsiveCellSize(gridWidth: number, gridHeight: number) {
+function useResponsiveCellSize(gridSize: number) {
   const [cellSize, setCellSize] = useState(32);
 
   useEffect(() => {
@@ -18,8 +39,8 @@ function useResponsiveCellSize(gridWidth: number, gridHeight: number) {
       const availableWidth = window.innerWidth - 16; // 8px padding on each side
       
       // Calculate max cell size that fits both dimensions
-      const maxCellFromHeight = Math.floor(availableHeight / gridHeight);
-      const maxCellFromWidth = Math.floor(availableWidth / gridWidth);
+      const maxCellFromHeight = Math.floor(availableHeight / gridSize);
+      const maxCellFromWidth = Math.floor(availableWidth / gridSize);
       
       // Use the smaller of the two, clamped between 28px and 48px
       const optimalSize = Math.min(maxCellFromHeight, maxCellFromWidth);
@@ -29,7 +50,7 @@ function useResponsiveCellSize(gridWidth: number, gridHeight: number) {
     calculateCellSize();
     window.addEventListener('resize', calculateCellSize);
     return () => window.removeEventListener('resize', calculateCellSize);
-  }, [gridWidth, gridHeight]);
+  }, [gridSize]);
 
   return cellSize;
 }
@@ -45,8 +66,8 @@ interface JunkyardScreenProps {
   onSearch: () => void;
   onReturnToBase: () => void;
   onOpenInventory: () => void;
-  pileRevealCount?: number; // How many items to reveal from scanner
-  getPilePreview?: (pile: JunkPile) => Item[]; // Get pre-generated items for a pile
+  pileRevealCount?: number;
+  getPilePreview?: (pile: JunkPile) => Item[];
 }
 
 // Get movement type from primary helper
@@ -59,41 +80,33 @@ function getMovementType(helpers: HelperRobot[]): MovementType {
 }
 
 // Check if a move is valid for the given movement type
-function isValidMove(dx: number, dy: number, movementType: MovementType, junkyard: GameState['junkyard'], fromX: number, fromY: number): boolean {
+function isValidMove(dx: number, dy: number, movementType: MovementType): boolean {
   const absDx = Math.abs(dx);
   const absDy = Math.abs(dy);
   
   switch (movementType) {
     case 'basic':
-      // Only orthogonal (up/down/left/right), 1 tile
       return (absDx + absDy === 1) && (absDx <= 1 && absDy <= 1);
-    
     case 'extended':
-      // Only orthogonal (up/down/left/right), up to 2 tiles
       return ((absDx === 0 && absDy >= 1 && absDy <= 2) || (absDy === 0 && absDx >= 1 && absDx <= 2));
-    
     case 'diagonal':
-      // Orthogonal OR diagonal, 1 tile
       return (absDx <= 1 && absDy <= 1) && (absDx + absDy >= 1);
-    
     case 'jump':
-      // Can move up to 2 tiles in any direction (including jumping over obstacles)
       return (absDx <= 2 && absDy <= 2) && (absDx + absDy >= 1);
-    
     default:
       return false;
   }
 }
 
-// Get all valid move targets for visualization
+// Get all valid move targets for visualization (using world coordinates)
 function getValidMoveTargets(
-  playerX: number, 
-  playerY: number, 
+  playerWorldX: number, 
+  playerWorldY: number, 
   movementType: MovementType, 
-  junkyard: GameState['junkyard']
+  infiniteJunkyard: GameState['infiniteJunkyard']
 ): Set<string> {
   const validTargets = new Set<string>();
-  if (!junkyard) return validTargets;
+  if (!infiniteJunkyard) return validTargets;
   
   const range = (movementType === 'jump' || movementType === 'extended') ? 2 : 1;
   
@@ -101,16 +114,13 @@ function getValidMoveTargets(
     for (let dx = -range; dx <= range; dx++) {
       if (dx === 0 && dy === 0) continue;
       
-      const targetX = playerX + dx;
-      const targetY = playerY + dy;
+      const targetX = playerWorldX + dx;
+      const targetY = playerWorldY + dy;
       
-      // Check if the move pattern is valid for this movement type
-      if (!isValidMove(dx, dy, movementType, junkyard, playerX, playerY)) continue;
+      if (!isValidMove(dx, dy, movementType)) continue;
       
-      // For jump, destination just needs to be passable (can jump over walls)
-      // For others, destination must be passable
-      if (isTilePassable(junkyard, targetX, targetY)) {
-        validTargets.add(`${targetX}-${targetY}`);
+      if (isWorldTilePassable(infiniteJunkyard, targetX, targetY)) {
+        validTargets.add(`${targetX},${targetY}`);
       }
     }
   }
@@ -118,41 +128,97 @@ function getValidMoveTargets(
   return validTargets;
 }
 
-// Get tiles within threat range of enemies
-function getEnemyThreatTiles(junkyard: GameState['junkyard']): Map<string, { threat: 'adjacent' | 'nearby'; color: string }> {
-  const threatTiles = new Map<string, { threat: 'adjacent' | 'nearby'; color: string }>();
-  if (!junkyard || !junkyard.enemies) return threatTiles;
+// Get tile data at world position from infinite junkyard
+function getTileDataAtWorld(
+  infiniteJunkyard: GameState['infiniteJunkyard'],
+  worldX: number,
+  worldY: number
+): {
+  isRevealed: boolean;
+  pile: JunkPile | null;
+  wall: ReturnType<typeof getWorldWallAt>;
+  terrain: ReturnType<typeof getWorldTerrainAt>;
+  barrier: ReturnType<typeof getWorldBarrierAt>;
+  enemy: Enemy | null;
+} {
+  if (!infiniteJunkyard) {
+    return { isRevealed: false, pile: null, wall: null, terrain: null, barrier: null, enemy: null };
+  }
   
-  for (const enemy of junkyard.enemies) {
+  const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
+  const { localX, localY } = worldToLocal(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
+  
+  const chunk = infiniteJunkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+  
+  if (!chunk) {
+    return { isRevealed: false, pile: null, wall: null, terrain: null, barrier: null, enemy: null };
+  }
+  
+  const isRevealed = chunk.revealedTiles[localY]?.[localX] ?? false;
+  const pile = chunk.piles.find(p => p.x === localX && p.y === localY) || null;
+  const wall = chunk.walls.find(w => w.x === localX && w.y === localY) || null;
+  const terrain = chunk.terrain.find(t => t.x === localX && t.y === localY) || null;
+  const barrier = chunk.barriers.find(b => b.x === localX && b.y === localY) || null;
+  const enemy = chunk.enemies?.find(e => e.x === localX && e.y === localY) || null;
+  
+  return { isRevealed, pile, wall, terrain, barrier, enemy };
+}
+
+// Get tiles within threat range of enemies in viewport
+function getEnemyThreatTiles(
+  infiniteJunkyard: GameState['infiniteJunkyard'],
+  viewportTiles: { worldX: number; worldY: number }[]
+): Map<string, { threat: 'adjacent' | 'nearby'; color: string }> {
+  const threatTiles = new Map<string, { threat: 'adjacent' | 'nearby'; color: string }>();
+  if (!infiniteJunkyard) return threatTiles;
+  
+  // Find all enemies in visible chunks
+  const enemiesInView: { enemy: Enemy; worldX: number; worldY: number }[] = [];
+  
+  for (const { worldX, worldY } of viewportTiles) {
+    const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
+    const chunk = infiniteJunkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+    if (!chunk || !chunk.enemies) continue;
+    
+    for (const enemy of chunk.enemies) {
+      const enemyWorldX = chunkX * CHUNK_WIDTH + enemy.x;
+      const enemyWorldY = chunkY * CHUNK_HEIGHT + enemy.y;
+      
+      // Only add if in viewport
+      if (viewportTiles.some(t => t.worldX === enemyWorldX && t.worldY === enemyWorldY)) {
+        enemiesInView.push({ enemy, worldX: enemyWorldX, worldY: enemyWorldY });
+      }
+    }
+  }
+  
+  for (const { enemy, worldX: enemyX, worldY: enemyY } of enemiesInView) {
     const def = getEnemyDefinition(enemy.definitionId);
     if (!def) continue;
     
-    // Get threat color based on threat level
     const threatColor = 
       def.threatLevel === 'deadly' ? 'bg-red-600/15' :
       def.threatLevel === 'dangerous' ? 'bg-red-500/10' :
       def.threatLevel === 'moderate' ? 'bg-orange-500/10' :
       'bg-yellow-500/5';
     
-    // Mark adjacent tiles (1 range) as dangerous
+    // Mark adjacent tiles as dangerous
     for (let dy = -1; dy <= 1; dy++) {
       for (let dx = -1; dx <= 1; dx++) {
         if (dx === 0 && dy === 0) continue;
-        const key = `${enemy.x + dx}-${enemy.y + dy}`;
+        const key = `${enemyX + dx},${enemyY + dy}`;
         const existing = threatTiles.get(key);
-        // Upgrade threat level if this is more dangerous
         if (!existing || existing.threat === 'nearby') {
           threatTiles.set(key, { threat: 'adjacent', color: threatColor });
         }
       }
     }
     
-    // For chasing/dangerous enemies, mark 2-range tiles as nearby threat
+    // For chasing/dangerous enemies, mark 2-range tiles
     if (def.behaviour === 'chase' || def.threatLevel === 'dangerous' || def.threatLevel === 'deadly') {
       for (let dy = -2; dy <= 2; dy++) {
         for (let dx = -2; dx <= 2; dx++) {
-          if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue; // Skip adjacent
-          const key = `${enemy.x + dx}-${enemy.y + dy}`;
+          if (Math.abs(dx) <= 1 && Math.abs(dy) <= 1) continue;
+          const key = `${enemyX + dx},${enemyY + dy}`;
           if (!threatTiles.has(key)) {
             threatTiles.set(key, { threat: 'nearby', color: threatColor.replace('/15', '/5').replace('/10', '/5') });
           }
@@ -176,15 +242,35 @@ export function JunkyardScreen({
   pileRevealCount = 0,
   getPilePreview,
 }: JunkyardScreenProps) {
-  const { junkyard, player, turnCount } = gameState;
+  const { infiniteJunkyard, player, turnCount } = gameState;
   
-  if (!junkyard) return null;
+  if (!infiniteJunkyard) return null;
 
-  const cellSize = useResponsiveCellSize(junkyard.width, junkyard.height);
+  const cellSize = useResponsiveCellSize(VIEWPORT_SIZE);
   const currentWeight = currentBag.items.reduce((sum, i) => sum + i.weight, 0);
   const batteryPercent = (player.currentCharge / maxBattery) * 100;
   const isBatteryLow = player.currentCharge <= 5;
   const isBatteryEmpty = player.currentCharge <= 0;
+  
+  // Calculate chunk distance for display
+  const { chunkX, chunkY } = worldToChunk(player.playerX, player.playerY, CHUNK_WIDTH, CHUNK_HEIGHT);
+  const chunkDistance = getChunkDistance(chunkX, chunkY);
+  
+  // Check if at entrance
+  const atEntrance = isAtEntrance(infiniteJunkyard, player.playerX, player.playerY);
+
+  // Generate viewport tiles (world coordinates)
+  const viewportTiles = useMemo(() => {
+    const tiles: { worldX: number; worldY: number; viewX: number; viewY: number }[] = [];
+    for (let vy = 0; vy < VIEWPORT_SIZE; vy++) {
+      for (let vx = 0; vx < VIEWPORT_SIZE; vx++) {
+        const worldX = player.playerX - VIEWPORT_RADIUS + vx;
+        const worldY = player.playerY - VIEWPORT_RADIUS + vy;
+        tiles.push({ worldX, worldY, viewX: vx, viewY: vy });
+      }
+    }
+    return tiles;
+  }, [player.playerX, player.playerY]);
 
   const getRarityClass = (pile: JunkPile) => {
     if (pile.isDepleted) return 'bg-pile-depleted';
@@ -192,46 +278,49 @@ export function JunkyardScreen({
   };
 
   // Check if a pile is adjacent to the player (for scanner reveal)
-  const isPileAdjacent = (pile: JunkPile) => {
-    const dx = Math.abs(pile.x - player.playerX);
-    const dy = Math.abs(pile.y - player.playerY);
+  const isPileAdjacent = (pileWorldX: number, pileWorldY: number) => {
+    const dx = Math.abs(pileWorldX - player.playerX);
+    const dy = Math.abs(pileWorldY - player.playerY);
     return dx <= 1 && dy <= 1 && !(dx === 0 && dy === 0);
   };
 
   // Get scanned items for an adjacent pile
-  const getScannedItems = (pile: JunkPile): Item[] => {
+  const getScannedItems = (pile: JunkPile, pileWorldX: number, pileWorldY: number): Item[] => {
     if (!getPilePreview || pileRevealCount === 0) return [];
-    if (!isPileAdjacent(pile) || pile.isDepleted) return [];
+    if (!isPileAdjacent(pileWorldX, pileWorldY) || pile.isDepleted) return [];
     const items = getPilePreview(pile);
     return items.slice(0, pileRevealCount);
   };
 
   const movementType = getMovementType(player.helpers);
-  const validMoveTargets = getValidMoveTargets(player.playerX, player.playerY, movementType, junkyard);
-  const enemyThreatTiles = getEnemyThreatTiles(junkyard);
+  const validMoveTargets = getValidMoveTargets(player.playerX, player.playerY, movementType, infiniteJunkyard);
+  const enemyThreatTiles = getEnemyThreatTiles(infiniteJunkyard, viewportTiles);
 
-  const handleTileClick = (x: number, y: number) => {
+  const handleTileClick = (worldX: number, worldY: number) => {
     if (isBatteryEmpty) return;
     
-    const dx = x - player.playerX;
-    const dy = y - player.playerY;
+    const dx = worldX - player.playerX;
+    const dy = worldY - player.playerY;
     
-    // Check if this is a valid move for our movement type
-    if (isValidMove(dx, dy, movementType, junkyard, player.playerX, player.playerY)) {
-      // For non-jump movement, verify path is clear
-      if (movementType !== 'jump' && !isTilePassable(junkyard, x, y)) {
-        return;
+    if (isValidMove(dx, dy, movementType)) {
+      if (movementType !== 'jump' && !isWorldTilePassable(infiniteJunkyard, worldX, worldY)) {
+        // Check for spider legs wall traversal
+        const wall = getWorldWallAt(infiniteJunkyard, worldX, worldY);
+        const primary = player.helpers.find(h => h.isPrimary);
+        const mobilityName = primary?.components.mobility?.name?.toLowerCase() || '';
+        if (!(wall && mobilityName.includes('spider'))) {
+          return;
+        }
       }
-      // For jump, just verify destination is passable
-      if (movementType === 'jump' && !isTilePassable(junkyard, x, y)) {
+      if (movementType === 'jump' && !isWorldTilePassable(infiniteJunkyard, worldX, worldY)) {
         return;
       }
       onMove(dx, dy);
     }
   };
 
-  const isValidTarget = (x: number, y: number) => {
-    return validMoveTargets.has(`${x}-${y}`);
+  const isValidTarget = (worldX: number, worldY: number) => {
+    return validMoveTargets.has(`${worldX},${worldY}`);
   };
 
   return (
@@ -245,6 +334,11 @@ export function JunkyardScreen({
           <div className="text-center">
             <p className="text-[10px] text-muted-foreground leading-none">Turn</p>
             <p className="font-mono text-sm leading-tight">{turnCount}</p>
+          </div>
+          {/* Distance indicator */}
+          <div className="flex items-center gap-1 bg-muted/50 px-1.5 py-0.5 rounded text-xs">
+            <Compass className="w-3 h-3 text-primary" />
+            <span className="font-mono">{chunkDistance}</span>
           </div>
         </div>
         
@@ -297,174 +391,184 @@ export function JunkyardScreen({
           </p>
         </motion.div>
       )}
+      
+      {/* Entrance indicator */}
+      {atEntrance && (
+        <motion.div
+          className="mx-2 mt-1 px-2 py-1.5 bg-primary/20 border border-primary rounded text-center shrink-0"
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+        >
+          <p className="text-xs text-primary font-industrial flex items-center justify-center gap-1">
+            <MapPin className="w-3 h-3" />
+            ENTRANCE - Exit to save junkyard
+          </p>
+        </motion.div>
+      )}
 
-      {/* Map Grid - Responsive cells that fit screen */}
+      {/* Map Grid - Viewport centered on player */}
       <main className="flex-1 p-2 flex flex-col items-center justify-center overflow-hidden min-h-0">
         <div 
           className="junk-grid"
           style={{ 
-            gridTemplateColumns: `repeat(${junkyard.width}, ${cellSize}px)`,
+            gridTemplateColumns: `repeat(${VIEWPORT_SIZE}, ${cellSize}px)`,
             gap: `${Math.max(1, Math.floor(cellSize / 12))}px`,
           }}
         >
-          {Array.from({ length: junkyard.height }).map((_, y) =>
-            Array.from({ length: junkyard.width }).map((_, x) => {
-              const isRevealed = junkyard.revealedTiles[y]?.[x] ?? false;
-              const isPlayer = x === player.playerX && y === player.playerY;
-              const pile = junkyard.piles.find(p => p.x === x && p.y === y);
-              const wall = getWallAt(junkyard, x, y);
-              const terrain = getTerrainAt(junkyard, x, y);
-              const barrier = getBarrierAt(junkyard, x, y);
-              const enemy = getEnemyAt(junkyard, x, y);
-              const enemyDef = enemy ? getEnemyDefinition(enemy.definitionId) : null;
-              const droppedItem = junkyard.droppedItems.find(d => d.x === x && d.y === y);
-              const isTarget = isValidTarget(x, y);
-              const isPassable = isTilePassable(junkyard, x, y);
-              const threatInfo = enemyThreatTiles.get(`${x}-${y}`);
-              
-              // Spider legs can traverse walls
-              const primary = player.helpers.find(h => h.isPrimary);
-              const mobilityName = primary?.components.mobility?.name?.toLowerCase() || '';
-              const canTraverseWall = mobilityName.includes('spider') && wall;
-              const canMoveTo = isRevealed && isTarget && !isPlayer && (isPassable || canTraverseWall) && !isBatteryEmpty;
-              
-              const terrainStyle = terrain ? TERRAIN_DISPLAY[terrain.type] : null;
+          {viewportTiles.map(({ worldX, worldY, viewX, viewY }) => {
+            const { isRevealed, pile, wall, terrain, barrier, enemy } = getTileDataAtWorld(infiniteJunkyard, worldX, worldY);
+            const enemyDef = enemy ? getEnemyDefinition(enemy.definitionId) : null;
+            const isPlayer = worldX === player.playerX && worldY === player.playerY;
+            const isEntranceTile = worldX === infiniteJunkyard.entranceX && worldY === infiniteJunkyard.entranceY;
+            const isTarget = isValidTarget(worldX, worldY);
+            const isPassable = isWorldTilePassable(infiniteJunkyard, worldX, worldY);
+            const threatInfo = enemyThreatTiles.get(`${worldX},${worldY}`);
+            
+            // Spider legs can traverse walls
+            const primary = player.helpers.find(h => h.isPrimary);
+            const mobilityName = primary?.components.mobility?.name?.toLowerCase() || '';
+            const canTraverseWall = mobilityName.includes('spider') && wall;
+            const canMoveTo = isRevealed && isTarget && !isPlayer && (isPassable || canTraverseWall) && !isBatteryEmpty;
+            
+            const terrainStyle = terrain ? TERRAIN_DISPLAY[terrain.type] : null;
 
-              return (
-                <motion.button
-                  key={`${x}-${y}`}
-                  className={cn(
-                    "relative flex items-center justify-center rounded-sm transition-all",
-                    !isRevealed && "bg-fog",
-                    isRevealed && !wall && !terrainStyle && "bg-revealed",
-                    isRevealed && !wall && terrainStyle && terrainStyle.bg,
-                    isRevealed && !wall && terrainStyle && `border ${terrainStyle.border}`,
-                    isRevealed && wall && "bg-muted",
-                    isPlayer && "ring-2 ring-primary ring-inset bg-primary/20",
-                    canMoveTo && "ring-1 ring-primary/50 cursor-pointer hover:bg-primary/10 active:scale-95",
-                    !canMoveTo && !isPlayer && "cursor-default",
-                    isBatteryEmpty && isTarget && "opacity-50"
-                  )}
-                  style={{ width: cellSize, height: cellSize }}
-                  onClick={() => canMoveTo && handleTileClick(x, y)}
-                  disabled={!canMoveTo}
-                  initial={isRevealed ? { opacity: 0, scale: 0.8 } : {}}
-                  animate={isRevealed ? { opacity: 1, scale: 1 } : {}}
-                  transition={{ duration: 0.2 }}
-                  whileTap={canMoveTo ? { scale: 0.9 } : {}}
-                >
-                  {/* Enemy threat range overlay */}
-                  {isRevealed && threatInfo && !enemy && (
+            return (
+              <motion.button
+                key={`${viewX}-${viewY}`}
+                className={cn(
+                  "relative flex items-center justify-center rounded-sm transition-all",
+                  !isRevealed && "bg-fog",
+                  isRevealed && !wall && !terrainStyle && "bg-revealed",
+                  isRevealed && !wall && terrainStyle && terrainStyle.bg,
+                  isRevealed && !wall && terrainStyle && `border ${terrainStyle.border}`,
+                  isRevealed && wall && "bg-muted",
+                  isPlayer && "ring-2 ring-primary ring-inset bg-primary/20",
+                  isEntranceTile && isRevealed && !isPlayer && "ring-1 ring-accent ring-inset",
+                  canMoveTo && "ring-1 ring-primary/50 cursor-pointer hover:bg-primary/10 active:scale-95",
+                  !canMoveTo && !isPlayer && "cursor-default",
+                  isBatteryEmpty && isTarget && "opacity-50"
+                )}
+                style={{ width: cellSize, height: cellSize }}
+                onClick={() => canMoveTo && handleTileClick(worldX, worldY)}
+                disabled={!canMoveTo}
+                initial={isRevealed ? { opacity: 0, scale: 0.8 } : {}}
+                animate={isRevealed ? { opacity: 1, scale: 1 } : {}}
+                transition={{ duration: 0.2 }}
+                whileTap={canMoveTo ? { scale: 0.9 } : {}}
+              >
+                {/* Enemy threat range overlay */}
+                {isRevealed && threatInfo && !enemy && (
+                  <div 
+                    className={cn(
+                      "absolute inset-0 rounded-sm pointer-events-none",
+                      threatInfo.color,
+                      threatInfo.threat === 'adjacent' && "border border-red-500/20"
+                    )}
+                  />
+                )}
+                
+                {/* Entrance marker */}
+                {isRevealed && isEntranceTile && !isPlayer && (
+                  <div className="absolute inset-0 flex items-center justify-center">
+                    <MapPin className="w-4 h-4 text-accent opacity-60" />
+                  </div>
+                )}
+                
+                {/* Terrain hazard indicator */}
+                {isRevealed && terrain && !wall && !pile && !barrier && !isEntranceTile && (
+                  <span className="absolute text-xs opacity-70">{terrain.icon}</span>
+                )}
+                
+                {/* Wall obstacle */}
+                {isRevealed && wall && (
+                  <span className="text-base sm:text-lg opacity-60">{wall.icon}</span>
+                )}
+                
+                {/* Barrier (soft gate) */}
+                {isRevealed && barrier && !wall && (
+                  <span className="text-base sm:text-lg opacity-80">{barrier.icon}</span>
+                )}
+                
+                {/* Junk pile */}
+                {isRevealed && pile && !wall && (() => {
+                  const scannedItems = getScannedItems(pile, worldX, worldY);
+                  const hasScannedItems = scannedItems.length > 0;
+                  
+                  return (
                     <div 
                       className={cn(
-                        "absolute inset-0 rounded-sm pointer-events-none",
-                        threatInfo.color,
-                        threatInfo.threat === 'adjacent' && "border border-red-500/20"
+                        "absolute inset-0.5 rounded-sm flex flex-col items-center justify-center",
+                        getRarityClass(pile),
+                        hasScannedItems && "ring-1 ring-cyan-400/60"
                       )}
-                    />
-                  )}
-                  
-                  {/* Terrain hazard indicator */}
-                  {isRevealed && terrain && !wall && !pile && !barrier && (
-                    <span className="absolute text-xs opacity-70">{terrain.icon}</span>
-                  )}
-                  
-                  {/* Wall obstacle */}
-                  {isRevealed && wall && (
-                    <span className="text-base sm:text-lg opacity-60">{wall.icon}</span>
-                  )}
-                  
-                  {/* Barrier (soft gate) */}
-                  {isRevealed && barrier && !wall && (
-                    <span className="text-base sm:text-lg opacity-80">{barrier.icon}</span>
-                  )}
-                  
-                  {/* Junk pile */}
-                  {isRevealed && pile && !wall && (() => {
-                    const scannedItems = getScannedItems(pile);
-                    const hasScannedItems = scannedItems.length > 0;
-                    
-                    return (
-                      <div 
-                        className={cn(
-                          "absolute inset-0.5 rounded-sm flex flex-col items-center justify-center",
-                          getRarityClass(pile),
-                          hasScannedItems && "ring-1 ring-cyan-400/60"
-                        )}
-                      >
-                        {!pile.isDepleted && (
-                          <>
-                            <span className="text-base sm:text-lg">📦</span>
-                            {/* Scanner preview icons */}
-                            {hasScannedItems && (
-                              <div className="absolute -bottom-0.5 left-0 right-0 flex justify-center gap-0.5">
-                                {scannedItems.slice(0, 3).map((item, idx) => (
-                                  <span 
-                                    key={idx} 
-                                    className="text-[8px] sm:text-[10px] bg-background/80 rounded px-0.5"
-                                    title={item.name}
-                                  >
-                                    {item.icon}
-                                  </span>
-                                ))}
-                                {scannedItems.length > 3 && (
-                                  <span className="text-[8px] text-muted-foreground">+{scannedItems.length - 3}</span>
-                                )}
-                              </div>
-                            )}
-                          </>
-                        )}
-                        {pile.isDepleted && (
-                          <span className="text-base sm:text-lg opacity-30">📦</span>
-                        )}
-                      </div>
-                    );
-                  })()}
-                  
-                  {/* Dropped item */}
-                  {isRevealed && droppedItem && !pile && !wall && !enemy && (
-                    <span className="text-xs sm:text-sm">{droppedItem.item.icon}</span>
-                  )}
-                  
-                  {/* Enemy */}
-                  {isRevealed && enemy && enemyDef && !wall && (
-                    <motion.div
-                      className={cn(
-                        "absolute inset-0.5 rounded-sm flex items-center justify-center",
-                        enemyDef.threatLevel === 'nuisance' && "bg-yellow-500/20 ring-1 ring-yellow-500/40",
-                        enemyDef.threatLevel === 'moderate' && "bg-orange-500/20 ring-1 ring-orange-500/40",
-                        enemyDef.threatLevel === 'dangerous' && "bg-red-500/20 ring-1 ring-red-500/40",
-                        enemyDef.threatLevel === 'deadly' && "bg-red-700/30 ring-2 ring-red-600/60",
-                        enemy.isAlerted && "animate-pulse"
+                    >
+                      {!pile.isDepleted && (
+                        <>
+                          <span className="text-base sm:text-lg">📦</span>
+                          {/* Scanner preview icons */}
+                          {hasScannedItems && (
+                            <div className="absolute -bottom-0.5 left-0 right-0 flex justify-center gap-0.5">
+                              {scannedItems.slice(0, 3).map((item, idx) => (
+                                <span 
+                                  key={idx} 
+                                  className="text-[8px] sm:text-[10px] bg-background/80 rounded px-0.5"
+                                  title={item.name}
+                                >
+                                  {item.icon}
+                                </span>
+                              ))}
+                              {scannedItems.length > 3 && (
+                                <span className="text-[8px] text-muted-foreground">+{scannedItems.length - 3}</span>
+                              )}
+                            </div>
+                          )}
+                        </>
                       )}
-                      initial={{ scale: 0 }}
-                      animate={{ scale: 1 }}
-                      transition={{ type: 'spring', damping: 15 }}
-                      title={`${enemyDef.name} - ${enemyDef.description}`}
-                    >
-                      <span className="text-base sm:text-lg">{enemyDef.icon}</span>
-                    </motion.div>
-                  )}
-                  
-                  {/* Player */}
-                  {isPlayer && (
-                    <motion.div
-                      className="absolute inset-0 flex items-center justify-center z-10"
-                      animate={{ scale: [1, 1.1, 1] }}
-                      transition={{ repeat: Infinity, duration: 2 }}
-                    >
-                      <span className="text-lg sm:text-xl">🤖</span>
-                    </motion.div>
-                  )}
-                  
-                  {/* Adjacent indicator */}
-                  {canMoveTo && !pile && !wall && !terrain && (
-                    <span className="text-primary/60 text-xs">•</span>
-                  )}
-                </motion.button>
-              );
-            })
-          )}
+                      {pile.isDepleted && (
+                        <span className="text-base sm:text-lg opacity-30">📦</span>
+                      )}
+                    </div>
+                  );
+                })()}
+                
+                {/* Enemy */}
+                {isRevealed && enemy && enemyDef && !wall && (
+                  <motion.div
+                    className={cn(
+                      "absolute inset-0.5 rounded-sm flex items-center justify-center",
+                      enemyDef.threatLevel === 'nuisance' && "bg-yellow-500/20 ring-1 ring-yellow-500/40",
+                      enemyDef.threatLevel === 'moderate' && "bg-orange-500/20 ring-1 ring-orange-500/40",
+                      enemyDef.threatLevel === 'dangerous' && "bg-red-500/20 ring-1 ring-red-500/40",
+                      enemyDef.threatLevel === 'deadly' && "bg-red-700/30 ring-2 ring-red-600/60",
+                      enemy.isAlerted && "animate-pulse"
+                    )}
+                    initial={{ scale: 0 }}
+                    animate={{ scale: 1 }}
+                    transition={{ type: 'spring', damping: 15 }}
+                    title={`${enemyDef.name} - ${enemyDef.description}`}
+                  >
+                    <span className="text-base sm:text-lg">{enemyDef.icon}</span>
+                  </motion.div>
+                )}
+                
+                {/* Player */}
+                {isPlayer && (
+                  <motion.div
+                    className="absolute inset-0 flex items-center justify-center z-10"
+                    animate={{ scale: [1, 1.1, 1] }}
+                    transition={{ repeat: Infinity, duration: 2 }}
+                  >
+                    <span className="text-lg sm:text-xl">🤖</span>
+                  </motion.div>
+                )}
+                
+                {/* Adjacent indicator */}
+                {canMoveTo && !pile && !wall && !terrain && !isEntranceTile && (
+                  <span className="text-primary/60 text-xs">•</span>
+                )}
+              </motion.button>
+            );
+          })}
         </div>
 
         {/* Search Progress */}
@@ -503,6 +607,16 @@ export function JunkyardScreen({
               <Search className="w-4 h-4" />
               Search ({currentPile.progressTurns}/{currentPile.requiredTurns})
             </Button>
+          ) : atEntrance ? (
+            <Button
+              variant="action"
+              size="lg"
+              className="flex-1"
+              onClick={onReturnToBase}
+            >
+              <Home className="w-4 h-4" />
+              Exit & Save Junkyard
+            </Button>
           ) : (
             <Button
               variant={isBatteryEmpty ? "danger" : "nav"}
@@ -511,7 +625,7 @@ export function JunkyardScreen({
               onClick={onReturnToBase}
             >
               <Home className="w-4 h-4" />
-              {isBatteryEmpty ? "Return & Recharge" : "Return to Base"}
+              {isBatteryEmpty ? "Emergency Return" : "Return to Base"}
             </Button>
           )}
         </div>
@@ -521,6 +635,7 @@ export function JunkyardScreen({
           {movementType === 'diagonal' && 'Any direction including diagonal'}
           {movementType === 'jump' && 'Jump 2 tiles any direction'}
           {' • 1 battery/action'}
+          {chunkDistance > 0 && ` • Zone ${chunkDistance}`}
         </p>
       </footer>
     </div>

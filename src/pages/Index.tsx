@@ -140,7 +140,7 @@ const Index = () => {
   const controlCapacity = 1 + gameState.player.baseUpgrades.controlCapacity;
   const maxBattery = getMaxBattery();
   const currentBag = getCurrentBag();
-  const junkyardSeed = gameState.junkyard?.seed ?? gameState.junkyardSeed ?? Date.now();
+  const junkyardSeed = gameState.infiniteJunkyard?.baseSeed ?? gameState.junkyardSeed ?? Date.now();
   const biome = getBiomeFromSeed(junkyardSeed);
 
   if (showIntro) {
@@ -175,7 +175,7 @@ const Index = () => {
             key="scavenge"
             biome={biome}
             seed={junkyardSeed}
-            hasActiveJunkyard={gameState.junkyard !== null}
+            hasActiveJunkyard={gameState.infiniteJunkyard !== null}
             onEnterJunkyard={handleEnterJunkyard}
             onAbandonJunkyard={handleMoveToNextJunkyard}
             onClose={() => setCurrentScreen('base')}

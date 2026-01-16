@@ -41,7 +41,7 @@ export function BaseScreen({
   const { player } = gameState;
   const stashItemCount = player.stash.length;
   const cleaningCount = player.cleaningJobs.length;
-  const activeJunkyard = gameState.junkyard !== null;
+  const activeJunkyard = gameState.infiniteJunkyard !== null;
   
   // Get primary helper info
   const primaryHelper = player.helpers.find(h => h.isPrimary);
