@@ -61,6 +61,11 @@ export function ScavengeScreen({
             <Map className="w-6 h-6" />
             {hasActiveJunkyard ? 'Continue Scavenging' : 'Enter Junkyard'}
           </Button>
+          {hasActiveJunkyard && (
+            <p className="text-xs text-muted-foreground text-center mt-2">
+              Your progress is saved - return to where you left off
+            </p>
+          )}
         </motion.div>
 
         {/* Abandon Junkyard */}
@@ -76,8 +81,13 @@ export function ScavengeScreen({
             onClick={onAbandonJunkyard}
           >
             <Trash2 className="w-4 h-4" />
-            {hasActiveJunkyard ? 'Abandon & Find New Junkyard' : 'Find Different Junkyard'}
+            {hasActiveJunkyard ? 'Abandon Junkyard' : 'Find Different Junkyard'}
           </Button>
+          <p className="text-xs text-destructive/70 text-center mt-2">
+            {hasActiveJunkyard 
+              ? 'Warning: This will permanently lose your current junkyard progress!'
+              : 'Generate a new junkyard with fresh loot'}
+          </p>
         </motion.div>
       </main>
     </motion.div>

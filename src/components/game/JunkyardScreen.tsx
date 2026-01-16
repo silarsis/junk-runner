@@ -615,7 +615,7 @@ export function JunkyardScreen({
               onClick={onReturnToBase}
             >
               <Home className="w-4 h-4" />
-              Exit & Save Junkyard
+              Exit & Save Progress
             </Button>
           ) : (
             <Button
@@ -625,7 +625,7 @@ export function JunkyardScreen({
               onClick={onReturnToBase}
             >
               <Home className="w-4 h-4" />
-              {isBatteryEmpty ? "Emergency Return" : "Return to Base"}
+              {isBatteryEmpty ? "Emergency Teleport" : "Teleport to Base"}
             </Button>
           )}
         </div>
