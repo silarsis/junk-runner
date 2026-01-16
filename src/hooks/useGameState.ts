@@ -900,17 +900,16 @@ export function useGameState() {
       if (!prev) return prev;
       
       let infiniteJunkyard = prev.infiniteJunkyard;
-      let playerX = prev.player.playerX;
-      let playerY = prev.player.playerY;
       
       if (!infiniteJunkyard) {
         // Use the stored seed for the junkyard
         const seed = prev.junkyardSeed;
         infiniteJunkyard = createInfiniteJunkyard(seed, prev.player.currency);
-        // Start at entrance (center of chunk 0,0)
-        playerX = infiniteJunkyard.entranceX;
-        playerY = infiniteJunkyard.entranceY;
       }
+      
+      // Always start at entrance when entering/re-entering
+      const playerX = infiniteJunkyard.entranceX;
+      const playerY = infiniteJunkyard.entranceY;
       
       // Reveal tiles around player position
       infiniteJunkyard = revealTilesAroundWorld(infiniteJunkyard, playerX, playerY, REVEAL_RADIUS, prev.player.currency);
