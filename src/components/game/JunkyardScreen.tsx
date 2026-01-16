@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { Search, Home, Package, Battery, BatteryWarning, Eye } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -5,6 +6,33 @@ import { GameState, JunkPile, Bag, HelperRobot, TerrainType, Item } from '@/type
 import { getEnemyDefinition } from '@/types/enemies';
 import { isTilePassable, getWallAt, getTerrainAt, getBarrierAt, getEnemyAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
 import { cn } from '@/lib/utils';
+
+// Hook to calculate responsive cell size based on screen dimensions
+function useResponsiveCellSize(gridWidth: number, gridHeight: number) {
+  const [cellSize, setCellSize] = useState(32);
+
+  useEffect(() => {
+    const calculateCellSize = () => {
+      // Get available space (accounting for header ~60px, footer ~100px, padding ~24px)
+      const availableHeight = window.innerHeight - 184;
+      const availableWidth = window.innerWidth - 24; // 12px padding on each side
+      
+      // Calculate max cell size that fits both dimensions
+      const maxCellFromHeight = Math.floor(availableHeight / gridHeight);
+      const maxCellFromWidth = Math.floor(availableWidth / gridWidth);
+      
+      // Use the smaller of the two, clamped between 24px and 48px
+      const optimalSize = Math.min(maxCellFromHeight, maxCellFromWidth);
+      setCellSize(Math.max(24, Math.min(48, optimalSize)));
+    };
+
+    calculateCellSize();
+    window.addEventListener('resize', calculateCellSize);
+    return () => window.removeEventListener('resize', calculateCellSize);
+  }, [gridWidth, gridHeight]);
+
+  return cellSize;
+}
 
 type MovementType = 'basic' | 'diagonal' | 'jump' | 'extended';
 
@@ -152,6 +180,7 @@ export function JunkyardScreen({
   
   if (!junkyard) return null;
 
+  const cellSize = useResponsiveCellSize(junkyard.width, junkyard.height);
   const currentWeight = currentBag.items.reduce((sum, i) => sum + i.weight, 0);
   const batteryPercent = (player.currentCharge / maxBattery) * 100;
   const isBatteryLow = player.currentCharge <= 5;
@@ -269,13 +298,13 @@ export function JunkyardScreen({
         </motion.div>
       )}
 
-      {/* Map Grid - Larger cells, tappable */}
-      <main className="flex-1 p-3 flex flex-col items-center justify-center overflow-auto">
+      {/* Map Grid - Responsive cells that fit screen */}
+      <main className="flex-1 p-3 flex flex-col items-center justify-center overflow-hidden">
         <div 
-          className="junk-grid w-full max-w-[min(95vw,500px)]"
+          className="junk-grid"
           style={{ 
-            gridTemplateColumns: `repeat(${junkyard.width}, minmax(32px, 1fr))`,
-            gap: '3px',
+            gridTemplateColumns: `repeat(${junkyard.width}, ${cellSize}px)`,
+            gap: `${Math.max(1, Math.floor(cellSize / 12))}px`,
           }}
         >
           {Array.from({ length: junkyard.height }).map((_, y) =>
@@ -305,8 +334,7 @@ export function JunkyardScreen({
                 <motion.button
                   key={`${x}-${y}`}
                   className={cn(
-                    "aspect-square relative flex items-center justify-center rounded-sm transition-all",
-                    "min-h-[32px] min-w-[32px]",
+                    "relative flex items-center justify-center rounded-sm transition-all",
                     !isRevealed && "bg-fog",
                     isRevealed && !wall && !terrainStyle && "bg-revealed",
                     isRevealed && !wall && terrainStyle && terrainStyle.bg,
@@ -317,6 +345,7 @@ export function JunkyardScreen({
                     !canMoveTo && !isPlayer && "cursor-default",
                     isBatteryEmpty && isTarget && "opacity-50"
                   )}
+                  style={{ width: cellSize, height: cellSize }}
                   onClick={() => canMoveTo && handleTileClick(x, y)}
                   disabled={!canMoveTo}
                   initial={isRevealed ? { opacity: 0, scale: 0.8 } : {}}
