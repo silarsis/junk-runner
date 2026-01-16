@@ -13,17 +13,17 @@ function useResponsiveCellSize(gridWidth: number, gridHeight: number) {
 
   useEffect(() => {
     const calculateCellSize = () => {
-      // Get available space (accounting for header ~60px, footer ~100px, padding ~24px)
-      const availableHeight = window.innerHeight - 184;
-      const availableWidth = window.innerWidth - 24; // 12px padding on each side
+      // Get available space (header ~44px, footer ~70px, padding ~16px, search progress ~50px)
+      const availableHeight = window.innerHeight - 180;
+      const availableWidth = window.innerWidth - 16; // 8px padding on each side
       
       // Calculate max cell size that fits both dimensions
       const maxCellFromHeight = Math.floor(availableHeight / gridHeight);
       const maxCellFromWidth = Math.floor(availableWidth / gridWidth);
       
-      // Use the smaller of the two, clamped between 24px and 48px
+      // Use the smaller of the two, clamped between 28px and 48px
       const optimalSize = Math.min(maxCellFromHeight, maxCellFromWidth);
-      setCellSize(Math.max(24, Math.min(48, optimalSize)));
+      setCellSize(Math.max(28, Math.min(48, optimalSize)));
     };
 
     calculateCellSize();
@@ -235,27 +235,27 @@ export function JunkyardScreen({
   };
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
-      {/* Header */}
-      <header className="industrial-panel p-3 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" onClick={onReturnToBase}>
-            <Home className="w-5 h-5" />
+    <div className="h-screen bg-background flex flex-col overflow-hidden">
+      {/* Header - Compact */}
+      <header className="industrial-panel px-2 py-1.5 flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="icon" className="h-8 w-8" onClick={onReturnToBase}>
+            <Home className="w-4 h-4" />
           </Button>
-          <div>
-            <p className="text-xs text-muted-foreground">Turn</p>
-            <p className="font-mono text-lg">{turnCount}</p>
+          <div className="text-center">
+            <p className="text-[10px] text-muted-foreground leading-none">Turn</p>
+            <p className="font-mono text-sm leading-tight">{turnCount}</p>
           </div>
         </div>
         
         {/* Battery indicator */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-1.5">
           {isBatteryLow ? (
-            <BatteryWarning className={cn("w-5 h-5", isBatteryEmpty ? "text-destructive" : "text-accent animate-pulse")} />
+            <BatteryWarning className={cn("w-4 h-4", isBatteryEmpty ? "text-destructive" : "text-accent animate-pulse")} />
           ) : (
-            <Battery className="w-5 h-5 text-primary" />
+            <Battery className="w-4 h-4 text-primary" />
           )}
-          <div className="w-16 h-3 bg-muted rounded-full overflow-hidden">
+          <div className="w-12 h-2 bg-muted rounded-full overflow-hidden">
             <motion.div
               className={cn(
                 "h-full",
@@ -267,7 +267,7 @@ export function JunkyardScreen({
             />
           </div>
           <span className={cn(
-            "font-mono text-sm",
+            "font-mono text-xs",
             isBatteryEmpty ? "text-destructive" : isBatteryLow ? "text-accent" : "text-foreground"
           )}>
             {player.currentCharge}
@@ -278,28 +278,28 @@ export function JunkyardScreen({
           variant="steel" 
           size="sm" 
           onClick={onOpenInventory}
-          className="flex items-center gap-2"
+          className="flex items-center gap-1 h-7 px-2"
         >
-          <Package className="w-4 h-4" />
-          <span className="font-mono">{currentWeight}/{currentBag.maxWeight}</span>
+          <Package className="w-3 h-3" />
+          <span className="font-mono text-xs">{currentWeight}/{currentBag.maxWeight}</span>
         </Button>
       </header>
 
-      {/* Battery Empty Warning */}
+      {/* Battery Empty Warning - Compact */}
       {isBatteryEmpty && (
         <motion.div
-          className="mx-3 mt-2 p-3 bg-destructive/20 border border-destructive rounded-lg text-center"
+          className="mx-2 mt-1 px-2 py-1.5 bg-destructive/20 border border-destructive rounded text-center shrink-0"
           initial={{ opacity: 0, y: -10 }}
           animate={{ opacity: 1, y: 0 }}
         >
-          <p className="text-sm text-destructive font-industrial">
-            ⚠️ BATTERY DEPLETED - Return to Base to Recharge
+          <p className="text-xs text-destructive font-industrial">
+            ⚠️ BATTERY DEPLETED - Return to Base
           </p>
         </motion.div>
       )}
 
       {/* Map Grid - Responsive cells that fit screen */}
-      <main className="flex-1 p-3 flex flex-col items-center justify-center overflow-hidden">
+      <main className="flex-1 p-2 flex flex-col items-center justify-center overflow-hidden min-h-0">
         <div 
           className="junk-grid"
           style={{ 
@@ -490,37 +490,37 @@ export function JunkyardScreen({
         )}
       </main>
 
-      {/* Action Buttons */}
-      <footer className="industrial-panel p-4 pb-safe">
-        <div className="flex gap-3">
+      {/* Action Buttons - Compact */}
+      <footer className="industrial-panel px-3 py-2 pb-safe shrink-0">
+        <div className="flex gap-2">
           {currentPile && !currentPile.isDepleted && !isBatteryEmpty ? (
             <Button
               variant="action"
-              size="xl"
+              size="lg"
               className="flex-1"
               onClick={onSearch}
             >
-              <Search className="w-5 h-5" />
+              <Search className="w-4 h-4" />
               Search ({currentPile.progressTurns}/{currentPile.requiredTurns})
             </Button>
           ) : (
             <Button
               variant={isBatteryEmpty ? "danger" : "nav"}
-              size="xl"
+              size="lg"
               className="flex-1"
               onClick={onReturnToBase}
             >
-              <Home className="w-5 h-5" />
+              <Home className="w-4 h-4" />
               {isBatteryEmpty ? "Return & Recharge" : "Return to Base"}
             </Button>
           )}
         </div>
-        <p className="text-xs text-muted-foreground text-center mt-2">
-          {movementType === 'basic' && 'Tap adjacent tiles to move (↑↓←→)'}
-          {movementType === 'extended' && 'Move up to 2 tiles orthogonally (↑↓←→)'}
-          {movementType === 'diagonal' && 'Move in any direction including diagonals'}
-          {movementType === 'jump' && 'Jump up to 2 tiles in any direction'}
-          {' • Each action uses 1 battery'}
+        <p className="text-[10px] text-muted-foreground text-center mt-1">
+          {movementType === 'basic' && 'Tap adjacent tiles (↑↓←→)'}
+          {movementType === 'extended' && 'Move 2 tiles (↑↓←→)'}
+          {movementType === 'diagonal' && 'Any direction including diagonal'}
+          {movementType === 'jump' && 'Jump 2 tiles any direction'}
+          {' • 1 battery/action'}
         </p>
       </footer>
     </div>
