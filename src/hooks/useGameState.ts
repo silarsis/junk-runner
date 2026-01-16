@@ -899,31 +899,34 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      let junkyard = prev.junkyard;
+      let infiniteJunkyard = prev.infiniteJunkyard;
       let playerX = prev.player.playerX;
       let playerY = prev.player.playerY;
       
-      if (!junkyard) {
+      if (!infiniteJunkyard) {
         // Use the stored seed for the junkyard
         const seed = prev.junkyardSeed;
-        junkyard = generateJunkyard(seed, undefined, prev.player.currency);
-        playerX = 0;
-        playerY = 0;
+        infiniteJunkyard = createInfiniteJunkyard(seed, prev.player.currency);
+        // Start at entrance (center of chunk 0,0)
+        playerX = infiniteJunkyard.entranceX;
+        playerY = infiniteJunkyard.entranceY;
       }
       
-      junkyard = revealTilesAround(junkyard, playerX, playerY);
+      // Reveal tiles around player position
+      infiniteJunkyard = revealTilesAroundWorld(infiniteJunkyard, playerX, playerY, REVEAL_RADIUS, prev.player.currency);
       
       return {
         ...prev,
-        junkyard,
-        player: { ...prev.player, currentYardId: junkyard.yardId, playerX, playerY },
+        infiniteJunkyard,
+        junkyard: null, // Clear legacy junkyard
+        player: { ...prev.player, currentYardId: infiniteJunkyard.yardId, playerX, playerY },
       };
     });
   }, []);
 
   const movePlayer = useCallback((dx: number, dy: number) => {
     setGameState(prev => {
-      if (!prev || !prev.junkyard) return prev;
+      if (!prev || !prev.infiniteJunkyard) return prev;
       
       const newX = prev.player.playerX + dx;
       const newY = prev.player.playerY + dy;
@@ -963,125 +966,105 @@ export function useGameState() {
         return prev;
       }
       
-      // Check destination is passable (jump can skip intermediate tiles)
-      if (!isTilePassable(prev.junkyard, newX, newY)) {
-        // Spider legs can traverse walls at 2x battery cost
-        if (mobilityName.includes('spider')) {
-          // Allow wall traversal but we'll add extra cost later
-        } else {
-          return prev;
-        }
+      // Ensure target chunk is generated
+      let updatedJunkyard = prev.infiniteJunkyard;
+      const targetChunkCoord = worldToChunk(newX, newY, CHUNK_WIDTH, CHUNK_HEIGHT);
+      const { junkyard: withTargetChunk } = getOrGenerateChunk(
+        updatedJunkyard,
+        targetChunkCoord.chunkX,
+        targetChunkCoord.chunkY,
+        prev.player.currency
+      );
+      updatedJunkyard = withTargetChunk;
+      
+      // Check passability using world coordinates
+      const isPassable = isWorldTilePassable(updatedJunkyard, newX, newY);
+      
+      // Spider legs can walk over walls
+      const wallAtDest = getWorldWallAt(updatedJunkyard, newX, newY);
+      const hasSpiderLegs = mobilityName.includes('spider');
+      
+      if (!isPassable && !(hasSpiderLegs && wallAtDest)) {
+        return prev;
       }
       
-      // Calculate base battery cost
+      // Check for barriers
+      const barrierAtDest = getWorldBarrierAt(updatedJunkyard, newX, newY);
+      if (barrierAtDest && !barrierAtDest.isPassable) {
+        return prev;
+      }
+      
+      // Calculate battery cost
       let batteryCost = 1;
       
-      // Check terrain at destination
-      const destinationTerrain = getTerrainAt(prev.junkyard, newX, newY);
-      let updatedJunkyard = revealTilesAround(prev.junkyard, newX, newY);
-      let updatedBagItems = [...bagItems];
+      // Check for terrain effects using world coordinates
+      const destinationTerrain = getWorldTerrainAt(updatedJunkyard, newX, newY);
+      let updatedBagItems = bagItems;
       
-      // Apply terrain effects
+      // Show terrain notification
       if (destinationTerrain && movementType !== 'jump') {
-        // Jump jets skip over hazards entirely
-        // Set terrain for notification
         setLastTerrainType(destinationTerrain);
-        
+      } else {
+        setLastTerrainType(null);
+      }
+      
+      if (destinationTerrain && movementType !== 'jump') {
         switch (destinationTerrain.type) {
-          // Legacy/Generic terrains
           case 'mud':
-            // Costs 2 battery unless you have treads
-            if (!mobilityName.includes('tread')) {
+            if (!mobilityName.includes('tread') && !mobilityName.includes('track')) {
               batteryCost = 2;
             }
             break;
           case 'toxic':
-            // Damage items in bag (reduce condition by 5)
             updatedBagItems = bagItems.map(item => ({
               ...item,
               condition: Math.max(0, item.condition - 5),
             }));
             break;
           case 'electric':
-            // Drains 3 battery (could add insulated wheels later)
             batteryCost = 3;
             break;
           case 'oil':
           case 'oil_slick':
-            // Slide effect handled separately after move
             break;
           case 'magnetic':
           case 'magnetic_floor':
-            // Weight penalty handled elsewhere (inventory checks)
             break;
           case 'fog':
           case 'cooling_fog':
-            // Reduced reveal radius - reveal only 1 tile around
-            const newRevealed = updatedJunkyard.revealedTiles.map(row => [...row]);
-            for (let ddy = -1; ddy <= 1; ddy++) {
-              for (let ddx = -1; ddx <= 1; ddx++) {
-                const nx = newX + ddx;
-                const ny = newY + ddy;
-                if (nx >= 0 && nx < updatedJunkyard.width && ny >= 0 && ny < updatedJunkyard.height) {
-                  newRevealed[ny][nx] = true;
-                }
-              }
-            }
-            updatedJunkyard = { ...updatedJunkyard, revealedTiles: newRevealed };
+            // Reveal only 1 tile around - handled after move
             break;
-            
-          // Nuclear Exclusion Heap terrains
           case 'irradiated':
-            // Future: radiation accumulation. For now, costs extra battery
             batteryCost = 2;
             break;
           case 'cooling_trench':
-            // Slows movement, costs 2 battery
             batteryCost = 2;
             break;
           case 'cratered':
-            // No effect, just visual
             break;
-            
-          // Neon Slum Electronics Yard terrains
           case 'cable_sprawl':
-            // Movement hindered without cable-cutter
             if (!mobilityName.includes('cable')) {
               batteryCost = 2;
             }
             break;
           case 'broken_pavement':
-            // No effect
             break;
           case 'neon_pool':
-            // Electric interference, drains battery
             batteryCost = 2;
             break;
-            
-          // Industrial Corpse Zone terrains
           case 'assembly_line':
-            // No effect currently
             break;
           case 'collapsed_catwalk':
-            // Careful navigation required
             batteryCost = 2;
             break;
-            
-          // Black Market Bio-Waste Fields terrains
           case 'organic_sludge':
-            // Slow viscous ground
             batteryCost = 2;
             break;
           case 'flesh_mound':
-            // Higher loot density - no movement effect
             break;
           case 'drainage':
-            // Narrow walkways - no effect
             break;
-            
-          // Cloudfall Data Graveyard terrains
           case 'server_rack':
-            // Narrow paths - no effect
             break;
         }
       }
@@ -1094,7 +1077,6 @@ export function useGameState() {
         const terrainConfig = TERRAIN_EFFECTS[destinationTerrain.type];
         
         if (terrainConfig?.damagesMobility && primary && mobility) {
-          // Damage mobility component
           const newCondition = Math.max(0, mobility.condition - terrainConfig.damagesMobility);
           const updatedMobility = { ...mobility, condition: newCondition };
           
@@ -1112,7 +1094,6 @@ export function useGameState() {
         }
         
         if (terrainConfig?.damagesFrame && primary) {
-          // Damage all installed components slightly
           const damageToBattery = primary.components.battery 
             ? { ...primary.components.battery, condition: Math.max(0, primary.components.battery.condition - terrainConfig.damagesFrame) }
             : null;
@@ -1142,8 +1123,7 @@ export function useGameState() {
       }
       
       // Spider legs wall traversal costs 2x
-      const wallAtDest = prev.junkyard.walls.some(w => w.x === newX && w.y === newY);
-      if (wallAtDest && mobilityName.includes('spider')) {
+      if (wallAtDest && hasSpiderLegs) {
         batteryCost = batteryCost * 2;
       }
       
@@ -1152,11 +1132,10 @@ export function useGameState() {
         return prev;
       }
       
-      // Check if mobility is broken (condition 0) - can't move!
+      // Check if mobility is broken (condition 0)
       const primaryHelper = updatedHelpers.find(h => h.isPrimary);
       const mobilityCondition = primaryHelper?.components.mobility?.condition ?? 100;
       if (mobilityCondition === 0) {
-        // Allow move but show warning - player is stranded without repair
         componentDamageMessage = 'Mobility broken! Return to base for repairs!';
       }
       
@@ -1167,7 +1146,6 @@ export function useGameState() {
       
       // Store component damage message for display
       if (componentDamageMessage && destinationTerrain) {
-        // Will be shown via terrain toast with extra message
         setLastTerrainType({ ...destinationTerrain, name: componentDamageMessage });
       }
       
@@ -1183,16 +1161,20 @@ export function useGameState() {
         for (let s = 1; s <= slideDistance; s++) {
           const slideX = newX + dirX * s;
           const slideY = newY + dirY * s;
-          if (isTilePassable(prev.junkyard, slideX, slideY)) {
+          if (isWorldTilePassable(updatedJunkyard, slideX, slideY)) {
             finalX = slideX;
             finalY = slideY;
             // Reveal tiles along slide path
-            updatedJunkyard = revealTilesAround(updatedJunkyard, slideX, slideY);
+            updatedJunkyard = revealTilesAroundWorld(updatedJunkyard, slideX, slideY, REVEAL_RADIUS, prev.player.currency);
           } else {
             break;
           }
         }
       }
+      
+      // Reveal tiles around final position (respecting fog terrain)
+      const revealRadius = (destinationTerrain?.type === 'fog' || destinationTerrain?.type === 'cooling_fog') ? 1 : REVEAL_RADIUS;
+      updatedJunkyard = revealTilesAroundWorld(updatedJunkyard, finalX, finalY, revealRadius, prev.player.currency);
       
       const newTurnCount = prev.turnCount + 1;
       let newCharge = prev.player.currentCharge - batteryCost;
@@ -1208,28 +1190,51 @@ export function useGameState() {
         }
       }
       
-      // Process enemy turns after player moves
-      let finalJunkyard = updatedJunkyard;
+      // Process enemies in the current chunk
+      const { chunkX, chunkY } = worldToChunk(finalX, finalY, CHUNK_WIDTH, CHUNK_HEIGHT);
+      const { localX: playerLocalX, localY: playerLocalY } = worldToLocal(finalX, finalY, CHUNK_WIDTH, CHUNK_HEIGHT);
+      const currentChunk = updatedJunkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+      
       let enemyEncounter: Enemy | null = null;
       
-      if (finalJunkyard.enemies && finalJunkyard.enemies.length > 0) {
+      if (currentChunk && currentChunk.enemies && currentChunk.enemies.length > 0) {
+        // Create a temporary legacy junkyard structure for enemy AI
+        const tempJunkyard: Junkyard = {
+          yardId: updatedJunkyard.yardId,
+          seed: currentChunk.seed,
+          biomeId: updatedJunkyard.biomeId,
+          width: CHUNK_WIDTH,
+          height: CHUNK_HEIGHT,
+          revealedTiles: currentChunk.revealedTiles,
+          piles: currentChunk.piles,
+          walls: currentChunk.walls,
+          terrain: currentChunk.terrain,
+          barriers: currentChunk.barriers,
+          droppedItems: currentChunk.droppedItems,
+          enemies: currentChunk.enemies,
+        };
+        
         const { updatedEnemies, playerCollision } = processEnemyTurns(
-          finalJunkyard,
-          finalX,
-          finalY
+          tempJunkyard,
+          playerLocalX,
+          playerLocalY
         );
         
-        finalJunkyard = { ...finalJunkyard, enemies: updatedEnemies };
+        // Update chunk with new enemy positions
+        const updatedChunk = { ...currentChunk, enemies: updatedEnemies };
+        const newChunks = new Map(updatedJunkyard.chunks);
+        newChunks.set(makeChunkKey(chunkX, chunkY), updatedChunk);
+        updatedJunkyard = { ...updatedJunkyard, chunks: newChunks };
+        
         enemyEncounter = playerCollision;
         
-        // Check for adjacent enemies (for adjacency effects)
-        const adjacentEnemies = getAdjacentEnemies(updatedEnemies, finalX, finalY);
+        // Check for adjacent enemies
+        const adjacentEnemies = getAdjacentEnemies(updatedEnemies, playerLocalX, playerLocalY);
         const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
         let totalHelperDamage = 0;
         let totalItemDamage = 0;
         
         if (adjacentEnemies.length > 0) {
-          // Apply adjacency effects
           for (const enemy of adjacentEnemies) {
             const def = getEnemyDefinition(enemy.definitionId);
             if (!def) continue;
@@ -1245,7 +1250,6 @@ export function useGameState() {
             totalItemDamage += effects.itemDamage || 0;
           }
           
-          // Show adjacency warning if any drain occurred
           if (adjacencyDrainInfo.length > 0) {
             setTimeout(() => {
               showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
@@ -1259,19 +1263,14 @@ export function useGameState() {
           if (def) {
             const collisionEffects = getCollisionEffects(def);
             
-            // Apply collision battery drain
             newCharge = Math.max(0, newCharge - (collisionEffects.batteryDrain || 0));
-            
-            // Accumulate damage
             totalHelperDamage += collisionEffects.helperDamage || 0;
             totalItemDamage += collisionEffects.itemDamage || 0;
             
-            // Show encounter toast
             setTimeout(() => {
               showEnemyEncounterToast(collisionEffects);
             }, 0);
             
-            // Deadly enemies force immediate battery drain
             if (collisionEffects.forcedReturn) {
               newCharge = 0;
             }
@@ -1312,7 +1311,7 @@ export function useGameState() {
       
       return {
         ...prev,
-        junkyard: finalJunkyard,
+        infiniteJunkyard: updatedJunkyard,
         player: {
           ...prev.player, 
           playerX: finalX, 
@@ -1326,40 +1325,70 @@ export function useGameState() {
   }, [bagItems]);
 
   const getCurrentPile = useCallback((): JunkPile | null => {
-    if (!gameState?.junkyard) return null;
+    if (!gameState?.infiniteJunkyard) return null;
     
-    return gameState.junkyard.piles.find(
-      p => p.x === gameState.player.playerX && 
-           p.y === gameState.player.playerY && 
-           !p.isDepleted
+    const { chunkX, chunkY } = worldToChunk(
+      gameState.player.playerX,
+      gameState.player.playerY,
+      CHUNK_WIDTH,
+      CHUNK_HEIGHT
+    );
+    const { localX, localY } = worldToLocal(
+      gameState.player.playerX,
+      gameState.player.playerY,
+      CHUNK_WIDTH,
+      CHUNK_HEIGHT
+    );
+    
+    const chunk = gameState.infiniteJunkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+    if (!chunk) return null;
+    
+    return chunk.piles.find(
+      p => p.x === localX && p.y === localY && !p.isDepleted
     ) || null;
   }, [gameState]);
 
   const searchPile = useCallback(() => {
     setGameState(prev => {
-      if (!prev || !prev.junkyard) return prev;
+      if (!prev || !prev.infiniteJunkyard) return prev;
       
       // Check battery
       if (prev.player.currentCharge <= 0) {
         return prev;
       }
       
-      const pileIndex = prev.junkyard.piles.findIndex(
-        p => p.x === prev.player.playerX && 
-             p.y === prev.player.playerY && 
-             !p.isDepleted
+      const { chunkX, chunkY } = worldToChunk(
+        prev.player.playerX,
+        prev.player.playerY,
+        CHUNK_WIDTH,
+        CHUNK_HEIGHT
+      );
+      const { localX, localY } = worldToLocal(
+        prev.player.playerX,
+        prev.player.playerY,
+        CHUNK_WIDTH,
+        CHUNK_HEIGHT
+      );
+      
+      const chunkKey = makeChunkKey(chunkX, chunkY);
+      const chunk = prev.infiniteJunkyard.chunks.get(chunkKey);
+      if (!chunk) return prev;
+      
+      const pileIndex = chunk.piles.findIndex(
+        p => p.x === localX && p.y === localY && !p.isDepleted
       );
       
       if (pileIndex === -1) return prev;
       
-      const pile = prev.junkyard.piles[pileIndex];
+      const pile = chunk.piles[pileIndex];
       const newProgress = pile.progressTurns + 1;
       
-      const updatedPiles = [...prev.junkyard.piles];
+      const updatedPiles = [...chunk.piles];
+      let updatedJunkyard = prev.infiniteJunkyard;
       
       if (newProgress >= pile.requiredTurns) {
-        // Generate loot
-        const loot = generateLoot(Date.now() + pileIndex);
+        // Generate loot with distance-based rarity
+        const loot = generateLootForChunk(Date.now() + pileIndex, chunkX, chunkY);
         updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress, isDepleted: true };
         
         // Get current bag
@@ -1406,18 +1435,31 @@ export function useGameState() {
           }
         }
         
-        // Process enemy turns while searching
-        let updatedJunkyard = { ...prev.junkyard, piles: updatedPiles };
-        if (updatedJunkyard.enemies && updatedJunkyard.enemies.length > 0) {
-          const { updatedEnemies } = processEnemyTurns(
-            updatedJunkyard,
-            prev.player.playerX,
-            prev.player.playerY
-          );
-          updatedJunkyard = { ...updatedJunkyard, enemies: updatedEnemies };
+        // Update chunk with new pile state
+        const updatedChunk = { ...chunk, piles: updatedPiles };
+        
+        // Process enemy turns in this chunk
+        if (updatedChunk.enemies && updatedChunk.enemies.length > 0) {
+          const tempJunkyard: Junkyard = {
+            yardId: updatedJunkyard.yardId,
+            seed: updatedChunk.seed,
+            biomeId: updatedJunkyard.biomeId,
+            width: CHUNK_WIDTH,
+            height: CHUNK_HEIGHT,
+            revealedTiles: updatedChunk.revealedTiles,
+            piles: updatedChunk.piles,
+            walls: updatedChunk.walls,
+            terrain: updatedChunk.terrain,
+            barriers: updatedChunk.barriers,
+            droppedItems: updatedChunk.droppedItems,
+            enemies: updatedChunk.enemies,
+          };
           
-          // Check for adjacent enemies draining battery with proper effects
-          const adjacentEnemies = getAdjacentEnemies(updatedEnemies, prev.player.playerX, prev.player.playerY);
+          const { updatedEnemies } = processEnemyTurns(tempJunkyard, localX, localY);
+          updatedChunk.enemies = updatedEnemies;
+          
+          // Check for adjacent enemies
+          const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
           const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
           
           for (const enemy of adjacentEnemies) {
@@ -1438,9 +1480,14 @@ export function useGameState() {
           }
         }
         
+        // Update chunks map
+        const newChunks = new Map(updatedJunkyard.chunks);
+        newChunks.set(chunkKey, updatedChunk);
+        updatedJunkyard = { ...updatedJunkyard, chunks: newChunks };
+        
         return {
           ...prev,
-          junkyard: updatedJunkyard,
+          infiniteJunkyard: updatedJunkyard,
           player: { 
             ...prev.player, 
             currentCharge: newCharge,
@@ -1464,18 +1511,31 @@ export function useGameState() {
           }
         }
         
-        // Process enemy turns while searching
-        let updatedJunkyard = { ...prev.junkyard, piles: updatedPiles };
-        if (updatedJunkyard.enemies && updatedJunkyard.enemies.length > 0) {
-          const { updatedEnemies } = processEnemyTurns(
-            updatedJunkyard,
-            prev.player.playerX,
-            prev.player.playerY
-          );
-          updatedJunkyard = { ...updatedJunkyard, enemies: updatedEnemies };
+        // Update chunk with new pile state
+        const updatedChunk = { ...chunk, piles: updatedPiles };
+        
+        // Process enemy turns in this chunk
+        if (updatedChunk.enemies && updatedChunk.enemies.length > 0) {
+          const tempJunkyard: Junkyard = {
+            yardId: updatedJunkyard.yardId,
+            seed: updatedChunk.seed,
+            biomeId: updatedJunkyard.biomeId,
+            width: CHUNK_WIDTH,
+            height: CHUNK_HEIGHT,
+            revealedTiles: updatedChunk.revealedTiles,
+            piles: updatedChunk.piles,
+            walls: updatedChunk.walls,
+            terrain: updatedChunk.terrain,
+            barriers: updatedChunk.barriers,
+            droppedItems: updatedChunk.droppedItems,
+            enemies: updatedChunk.enemies,
+          };
           
-          // Check for adjacent enemies draining battery with proper effects
-          const adjacentEnemies = getAdjacentEnemies(updatedEnemies, prev.player.playerX, prev.player.playerY);
+          const { updatedEnemies } = processEnemyTurns(tempJunkyard, localX, localY);
+          updatedChunk.enemies = updatedEnemies;
+          
+          // Check for adjacent enemies
+          const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
           const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
           
           for (const enemy of adjacentEnemies) {
@@ -1496,9 +1556,14 @@ export function useGameState() {
           }
         }
         
+        // Update chunks map
+        const newChunks = new Map(updatedJunkyard.chunks);
+        newChunks.set(chunkKey, updatedChunk);
+        updatedJunkyard = { ...updatedJunkyard, chunks: newChunks };
+        
         return {
           ...prev,
-          junkyard: updatedJunkyard,
+          infiniteJunkyard: updatedJunkyard,
           player: { 
             ...prev.player, 
             currentCharge: newCharge,
@@ -1573,12 +1638,13 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      // Generate a new seed for the next junkyard
+      // Generate a new seed for the next junkyard (wipes and regenerates)
       const newSeed = Date.now();
       
       return {
         ...prev,
-        junkyard: null, // Clear current junkyard, will be generated on enter
+        infiniteJunkyard: null, // Clear current junkyard, will be generated on enter
+        junkyard: null, // Clear legacy junkyard too
         junkyardSeed: newSeed,
         player: { ...prev.player, playerX: 0, playerY: 0, currentYardId: null },
       };
@@ -2170,11 +2236,11 @@ export function useGameState() {
     if (pile.preGeneratedItems) {
       return pile.preGeneratedItems;
     }
-    // Generate items based on pile's position as part of the seed
-    const pileSeed = gameState?.junkyard?.seed ?? 0;
-    const itemSeed = pileSeed + pile.x * 1000 + pile.y;
-    return generateLoot(itemSeed);
-  }, [gameState?.junkyard?.seed]);
+    // Generate items based on pile's position using chunk-based loot
+    const pileSeed = gameState?.infiniteJunkyard?.baseSeed ?? gameState?.junkyardSeed ?? 0;
+    // Use local coordinates for seed variation
+    return generateLootForChunk(pileSeed + pile.x * 1000 + pile.y, 0, 0);
+  }, [gameState?.infiniteJunkyard?.baseSeed, gameState?.junkyardSeed]);
 
   // Buy an item from the shop
   const buyShopItem = useCallback((itemId: string) => {
