@@ -35,11 +35,11 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Quantum Chip', category: 'component', rarity: 'epic', sizeW: 1, sizeH: 1, weight: 1, baseValue: 200, icon: '💠' },
   { name: 'Fusion Core', category: 'component', rarity: 'legendary', sizeW: 2, sizeH: 2, weight: 4, baseValue: 500, icon: '⚡' },
   
-  // Batteries - findable in junkyard
-  { name: 'Salvaged Battery', category: 'battery', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 60, icon: '🔋', batteryCapacity: 25 },
-  { name: 'Industrial Battery', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 5, baseValue: 120, icon: '🔋', batteryCapacity: 35 },
-  { name: 'High-Capacity Cell', category: 'battery', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 4, baseValue: 250, icon: '⚡', batteryCapacity: 50 },
-  { name: 'Quantum Battery', category: 'battery', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 2, baseValue: 500, icon: '💎', batteryCapacity: 75 },
+  // Batteries - findable in junkyard (doubled capacities for infinite junkyard)
+  { name: 'Salvaged Battery', category: 'battery', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 60, icon: '🔋', batteryCapacity: 50 },
+  { name: 'Industrial Battery', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 5, baseValue: 120, icon: '🔋', batteryCapacity: 70 },
+  { name: 'High-Capacity Cell', category: 'battery', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 4, baseValue: 250, icon: '⚡', batteryCapacity: 100 },
+  { name: 'Quantum Battery', category: 'battery', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 2, baseValue: 500, icon: '💎', batteryCapacity: 150 },
   
   // Storage Modules - findable in junkyard
   { name: 'Salvaged Cargo Pod', category: 'storage', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 80, icon: '📦', storageWidth: 5, storageHeight: 5, storageMaxWeight: 35 },
@@ -77,11 +77,11 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Old Camera', category: 'junk', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 45, icon: '📷' },
 ];
 
-// Batteries available for purchase at base
+// Batteries available for purchase at base (doubled capacities for infinite junkyard)
 export const SHOP_BATTERIES: ItemTemplate[] = [
-  { name: 'Basic Battery Pack', category: 'battery', rarity: 'common', sizeW: 1, sizeH: 2, weight: 3, baseValue: 80, icon: '🔋', batteryCapacity: 25 },
-  { name: 'Enhanced Battery', category: 'battery', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 150, icon: '🔋', batteryCapacity: 35 },
-  { name: 'Pro Battery Module', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 4, baseValue: 300, icon: '⚡', batteryCapacity: 50 },
+  { name: 'Basic Battery Pack', category: 'battery', rarity: 'common', sizeW: 1, sizeH: 2, weight: 3, baseValue: 80, icon: '🔋', batteryCapacity: 50 },
+  { name: 'Enhanced Battery', category: 'battery', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 150, icon: '🔋', batteryCapacity: 70 },
+  { name: 'Pro Battery Module', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 4, baseValue: 300, icon: '⚡', batteryCapacity: 100 },
 ];
 
 // Storage modules for purchase
@@ -158,7 +158,7 @@ export function createBasicBattery(): Item {
     hiddenModifiers: [],
     revealedModifiers: [],
     icon: '🔋',
-    batteryCapacity: 20,
+    batteryCapacity: 40, // Doubled for infinite junkyard
   };
 }
 

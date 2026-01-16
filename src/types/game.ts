@@ -138,7 +138,9 @@ export interface BarrierTile {
 }
 
 import { Enemy } from './enemies';
+import { InfiniteJunkyard, SerializableInfiniteJunkyard } from './chunk';
 
+// Legacy Junkyard type (kept for compatibility during migration)
 export interface Junkyard {
   yardId: string;
   seed: number;
@@ -153,6 +155,9 @@ export interface Junkyard {
   droppedItems: DroppedItem[];
   enemies: Enemy[]; // Active enemies in the junkyard
 }
+
+// Re-export InfiniteJunkyard for convenience
+export type { InfiniteJunkyard, SerializableInfiniteJunkyard };
 
 export interface Bag {
   width: number;
@@ -242,13 +247,14 @@ export interface PlayerState {
 
 export interface GameState {
   player: PlayerState;
-  junkyard: Junkyard | null;
+  infiniteJunkyard: InfiniteJunkyard | null; // New infinite chunk-based junkyard
+  junkyard: Junkyard | null; // Legacy - kept for migration
   junkyardSeed: number; // Seed for the next/current junkyard (for preview)
   turnCount: number;
 }
 
 // Default values for basic components
-export const BASIC_BATTERY_CAPACITY = 20;
+export const BASIC_BATTERY_CAPACITY = 40; // Doubled for infinite junkyard
 export const BASIC_STORAGE_WIDTH = 4;
 export const BASIC_STORAGE_HEIGHT = 4;
 export const BASIC_STORAGE_WEIGHT = 30;
