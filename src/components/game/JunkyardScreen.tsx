@@ -21,6 +21,7 @@ import {
   getWorldEnemyAt,
   getWorldPileAt,
   isAtEntrance,
+  getChunkSafe,
 } from '@/lib/chunkGenerator';
 import { cn } from '@/lib/utils';
 
@@ -148,7 +149,7 @@ function getTileDataAtWorld(
   const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   const { localX, localY } = worldToLocal(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
   
-  const chunk = infiniteJunkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+  const chunk = getChunkSafe(infiniteJunkyard, makeChunkKey(chunkX, chunkY));
   
   if (!chunk) {
     return { isRevealed: false, pile: null, wall: null, terrain: null, barrier: null, enemy: null };
@@ -177,7 +178,7 @@ function getEnemyThreatTiles(
   
   for (const { worldX, worldY } of viewportTiles) {
     const { chunkX, chunkY } = worldToChunk(worldX, worldY, CHUNK_WIDTH, CHUNK_HEIGHT);
-    const chunk = infiniteJunkyard.chunks.get(makeChunkKey(chunkX, chunkY));
+    const chunk = getChunkSafe(infiniteJunkyard, makeChunkKey(chunkX, chunkY));
     if (!chunk || !chunk.enemies) continue;
     
     for (const enemy of chunk.enemies) {
