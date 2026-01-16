@@ -16,11 +16,21 @@ import {
   TerrainTile,
   CleaningBot,
   CleaningBotPriority,
+  InfiniteJunkyard,
+  SerializableInfiniteJunkyard,
   BASIC_BATTERY_CAPACITY,
   BASIC_STORAGE_WIDTH,
   BASIC_STORAGE_HEIGHT,
   BASIC_STORAGE_WEIGHT,
 } from '@/types/game';
+import { 
+  worldToChunk,
+  worldToLocal,
+  makeChunkKey,
+  getChunkDistance,
+  serializeInfiniteJunkyard,
+  deserializeInfiniteJunkyard,
+} from '@/types/chunk';
 import { 
   ITEM_TEMPLATES, 
   RARITY_WEIGHTS, 
@@ -30,7 +40,22 @@ import {
   createBasicStorage,
   createBasicMobility,
 } from '@/data/itemTemplates';
-import { generateJunkyard, isTilePassable, getTerrainAt, getEnemyAt } from '@/lib/terrainGenerator';
+import { generateJunkyard, isTilePassable, getTerrainAt, getEnemyAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
+import { 
+  createInfiniteJunkyard,
+  revealTilesAroundWorld,
+  isWorldTilePassable,
+  getWorldTerrainAt,
+  getWorldEnemyAt,
+  getWorldWallAt,
+  getWorldBarrierAt,
+  getWorldPileAt,
+  isAtEntrance,
+  getOrGenerateChunk,
+  generateLootForChunk,
+  CHUNK_WIDTH,
+  CHUNK_HEIGHT,
+} from '@/lib/chunkGenerator';
 import { processEnemyTurns, getAdjacentEnemies } from '@/lib/enemyAI';
 import { getEnemyDefinition, Enemy } from '@/types/enemies';
 import { 
@@ -787,6 +812,7 @@ export function useGameState() {
         setBagItems([]);
         setGameState({
           player: createInitialPlayerState(),
+          infiniteJunkyard: null,
           junkyard: null,
           junkyardSeed: Date.now(),
           turnCount: 0,
@@ -795,6 +821,7 @@ export function useGameState() {
     } else {
       setGameState({
         player: createInitialPlayerState(),
+        infiniteJunkyard: null,
         junkyard: null,
         junkyardSeed: Date.now(),
         turnCount: 0,
@@ -1909,6 +1936,7 @@ export function useGameState() {
     setBagItems([]);
     setGameState({
       player: createInitialPlayerState(),
+      infiniteJunkyard: null,
       junkyard: null,
       junkyardSeed: Date.now(),
       turnCount: 0,
