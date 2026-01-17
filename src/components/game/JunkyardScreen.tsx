@@ -256,9 +256,12 @@ export function JunkyardScreen({
   const { infiniteJunkyard, player, turnCount } = gameState;
   const [inspectInfo, setInspectInfo] = useState<{ x: number; y: number; content: string; effect?: string } | null>(null);
   
+  // All hooks must be called before any conditional returns
+  const cellSize = useResponsiveCellSize(VIEWPORT_SIZE);
+  
+  // Early return AFTER all hooks have been called
   if (!infiniteJunkyard) return null;
 
-  const cellSize = useResponsiveCellSize(VIEWPORT_SIZE);
   const currentWeight = currentBag.items.reduce((sum, i) => sum + i.weight, 0);
   const batteryPercent = (player.currentCharge / maxBattery) * 100;
   const isBatteryLow = player.currentCharge <= 5;
