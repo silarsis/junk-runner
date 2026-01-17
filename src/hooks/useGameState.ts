@@ -114,6 +114,7 @@ function createInitialPlayerState(): PlayerState {
       controlCapacity: 0,
       chargerEfficiency: 0,
       baseRechargeRate: 0,
+      shopPrices: 0,
     },
     helpers: [createPrimaryHelper()],
     cleaningJobs: [],

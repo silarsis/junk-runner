@@ -65,6 +65,15 @@ export const UPGRADES: Record<string, UpgradeInfo> = {
     getCost: (level) => 150 * Math.pow(2, level),
     getValue: (level) => 300 - (level * 60), // 300s, 240s, 180s, 120s, 60s (5min -> 1min)
   },
+  shopPrices: {
+    id: 'shopPrices',
+    name: 'Haggling',
+    description: 'Get better prices when selling',
+    icon: '💰',
+    maxLevel: 3,
+    getCost: (level) => 250 * Math.pow(2, level),
+    getValue: (level) => 1 + (level === 1 ? 0.1 : level === 2 ? 0.25 : level === 3 ? 0.5 : 0), // 10%, 25%, 50%
+  },
 };
 
 export interface HelperFrameInfo {
