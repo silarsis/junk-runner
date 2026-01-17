@@ -28,7 +28,7 @@ function calculateSellPrice(item: Item): number {
   const conditionMult = item.condition / 100;
   const dirtyMult = item.isDirty ? 0.3 : 1;
   
-  return Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult);
+  return Math.max(1, Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult));
 }
 
 function formatTimeRemaining(ms: number): string {
