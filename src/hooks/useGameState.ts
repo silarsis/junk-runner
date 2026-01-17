@@ -1828,7 +1828,7 @@ export function useGameState() {
     });
   }, []);
 
-  const startCleaning = useCallback((itemId: string) => {
+  const startCleaning = useCallback((itemId: string, replaceJobId?: string) => {
     setGameState(prev => {
       if (!prev) return prev;
       
@@ -1839,7 +1839,20 @@ export function useGameState() {
       if (!item.isDirty) return prev;
       
       const maxSlots = 1 + prev.player.baseUpgrades.cleaningSlots;
-      if (prev.player.cleaningJobs.length >= maxSlots) return prev;
+      let newJobs = [...prev.player.cleaningJobs];
+      let newStash = [...prev.player.stash];
+      
+      // If replacing, return the old item to stash (still dirty)
+      if (replaceJobId) {
+        const replacedJob = newJobs.find(j => j.jobId === replaceJobId);
+        if (replacedJob) {
+          newStash.push({ ...replacedJob.item, isDirty: true });
+          newJobs = newJobs.filter(j => j.jobId !== replaceJobId);
+        }
+      } else if (newJobs.length >= maxSlots) {
+        // No slot available and not replacing
+        return prev;
+      }
       
       const speedMultiplier = 1 + prev.player.baseUpgrades.cleaningSpeed * 0.2;
       const duration = getCleaningDuration(item, speedMultiplier);
@@ -1852,14 +1865,14 @@ export function useGameState() {
         duration,
       };
       
-      const newStash = prev.player.stash.filter(i => i.id !== itemId);
+      newStash = newStash.filter(i => i.id !== itemId);
       
       return {
         ...prev,
         player: {
           ...prev.player,
           stash: newStash,
-          cleaningJobs: [...prev.player.cleaningJobs, job],
+          cleaningJobs: [...newJobs, job],
         },
       };
     });
