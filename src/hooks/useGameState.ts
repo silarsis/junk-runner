@@ -1887,25 +1887,34 @@ export function useGameState() {
     });
   }, []);
 
-  const calculateItemValue = useCallback((item: Item): number => {
+  const calculateItemValue = (item: Item, shopPricesLevel: number): number => {
     const rarityMult: Record<Rarity, number> = {
-      common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
+      common: 1,
+      uncommon: 1.5,
+      rare: 2.5,
+      epic: 4,
+      legendary: 8,
     };
+
     const conditionMult = item.condition / 100;
     const dirtyMult = item.isDirty ? 0.3 : 1;
-    const shopPriceMultiplier = UPGRADES.shopPrices.getValue(gameState?.player.baseUpgrades.shopPrices ?? 0);
-    return Math.max(1, Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult * shopPriceMultiplier));
-  }, [gameState?.player.baseUpgrades.shopPrices]);
+    const shopPriceMultiplier = UPGRADES.shopPrices.getValue(shopPricesLevel);
+
+    return Math.max(
+      1,
+      Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult * shopPriceMultiplier),
+    );
+  };
 
   const sellItem = useCallback((itemId: string) => {
     setGameState(prev => {
       if (!prev) return prev;
-      
+
       const item = prev.player.stash.find(i => i.id === itemId);
       if (!item) return prev;
-      
-      const value = calculateItemValue(item);
-      
+
+      const value = calculateItemValue(item, prev.player.baseUpgrades.shopPrices);
+
       return {
         ...prev,
         player: {
@@ -1920,13 +1929,16 @@ export function useGameState() {
   const sellMultipleItems = useCallback((itemIds: string[]) => {
     setGameState(prev => {
       if (!prev) return prev;
-      
+
       const idsSet = new Set(itemIds);
       const itemsToSell = prev.player.stash.filter(i => idsSet.has(i.id));
       if (itemsToSell.length === 0) return prev;
-      
-      const totalValue = itemsToSell.reduce((sum, item) => sum + calculateItemValue(item), 0);
-      
+
+      const totalValue = itemsToSell.reduce(
+        (sum, item) => sum + calculateItemValue(item, prev.player.baseUpgrades.shopPrices),
+        0,
+      );
+
       return {
         ...prev,
         player: {
