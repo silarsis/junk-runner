@@ -189,6 +189,8 @@ const Index = () => {
             onTransferToStash={transferToStash}
             onRecharge={handleRecharge}
             onResetSave={handleResetSave}
+            onInstallComponent={installComponent}
+            onRemoveComponent={removeComponent}
           />
         )}
 
