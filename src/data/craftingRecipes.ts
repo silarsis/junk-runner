@@ -628,6 +628,21 @@ export const CONSUMABLE_RECIPES: CraftingRecipe[] = [
     currencyCost: 100,
     output: { consumableType: 'holographic_decoy' },
   },
+  {
+    id: 'consumable_recall_beacon',
+    name: 'Recall Beacon',
+    category: 'consumable' as any,
+    icon: '📡',
+    description: 'Teleport to base without losing junkyard progress.',
+    ingredients: [
+      { name: 'Quantum Chip', quantity: 1 },
+      { name: 'Circuit Board', quantity: 2 },
+      { name: 'Power Cell', quantity: 2 },
+      { name: 'Copper Wire', quantity: 3 },
+    ],
+    currencyCost: 150,
+    output: { consumableType: 'recall_beacon' },
+  },
 ];
 
 // Combined recipes for easy access

@@ -140,6 +140,14 @@ const Index = () => {
     returnToBase(true); // Recharge when at base
   };
 
+  // Handle firing consumables - check for recall beacon which returns to base
+  const handleFireConsumable = (index: number) => {
+    const result = fireConsumable(index);
+    if (result === 'recall') {
+      setCurrentScreen('base');
+    }
+  };
+
   const handleMoveToNextJunkyard = () => {
     if (confirm('This will permanently discard the current junkyard. Continue?')) {
       moveToNextJunkyard();
@@ -232,7 +240,7 @@ const Index = () => {
             getPilePreview={getPilePreview}
             loadedConsumables={getLoadedConsumables().consumables}
             launcherCapacity={getLoadedConsumables().capacity}
-            onFireConsumable={fireConsumable}
+            onFireConsumable={handleFireConsumable}
           />
         )}
 

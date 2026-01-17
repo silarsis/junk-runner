@@ -272,8 +272,14 @@ function generateShopInventory(seed: number): ShopItem[] {
     };
     
     // Consumable buy price: 20-35 based on how many enemies it counters
-    const counterBonus = consumableDef.countersEnemies.length * 3;
-    const buyPrice = 20 + counterBonus;
+    // Special case: Recall Beacon is a utility item with higher value
+    let buyPrice: number;
+    if (consumableDef.id === 'recall_beacon') {
+      buyPrice = 75; // Premium utility item
+    } else {
+      const counterBonus = consumableDef.countersEnemies.length * 3;
+      buyPrice = 20 + counterBonus;
+    }
     
     items.push({ item: consumableItem, buyPrice });
   }
@@ -2727,8 +2733,9 @@ export function useGameState() {
     });
   }, [getChargingCost, processAutoCleaning]);
 
-  // Fire a consumable at enemies
-  const fireConsumable = useCallback((consumableIndex: number) => {
+  // Fire a consumable at enemies (or use utility consumables like recall beacon)
+  // Returns 'recall' if a recall beacon was used, signaling the UI to switch screens
+  const fireConsumable = useCallback((consumableIndex: number): 'recall' | void => {
     if (!gameState) return;
     if (!gameState.infiniteJunkyard) return;
     
@@ -2746,6 +2753,49 @@ export function useGameState() {
         description: `Effect active in your vicinity.`,
       });
       return;
+    }
+    
+    // Special case: Recall Beacon - teleport to base without resetting junkyard
+    if (consumable.consumableType === 'recall_beacon') {
+      setGameState(prev => {
+        if (!prev) return prev;
+        
+        // Remove the consumable from loaded consumables
+        const newHelpers = prev.player.helpers.map(helper => {
+          if (!helper.isPrimary) return helper;
+          
+          const newLoadedConsumables = [...helper.components.loadedConsumables];
+          newLoadedConsumables.splice(consumableIndex, 1);
+          
+          return {
+            ...helper,
+            components: {
+              ...helper.components,
+              loadedConsumables: newLoadedConsumables,
+            },
+          };
+        });
+        
+        // Return to base but PRESERVE the junkyard state
+        return {
+          ...prev,
+          player: {
+            ...prev.player,
+            helpers: newHelpers,
+            currentYardId: null,
+            playerX: prev.infiniteJunkyard?.entranceX ?? 0,
+            playerY: prev.infiniteJunkyard?.entranceY ?? 0,
+          },
+          // Keep infiniteJunkyard intact!
+        };
+      });
+      
+      toast({
+        title: `📡 Recall Beacon activated!`,
+        description: `Teleporting to base... Your junkyard progress is saved.`,
+      });
+      
+      return 'recall';
     }
     
     // Map consumable types to status effects
