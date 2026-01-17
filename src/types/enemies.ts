@@ -37,6 +37,22 @@ export interface EnemyDefinition {
   spawnWeight: number;
 }
 
+// Status effects that can be applied by consumables
+export type EnemyStatusEffect = 
+  | 'stunned'       // Cannot move or act
+  | 'scattered'     // Forced to flee/random movement
+  | 'neutralized'   // Removed from play entirely
+  | 'blinded'       // Cannot chase, wanders randomly
+  | 'frozen'        // Cannot move, still has adjacency effects
+  | 'corrupted'     // Random erratic behavior
+  | 'distracted';   // Ignores player, moves toward decoy
+
+export interface EnemyStatus {
+  effect: EnemyStatusEffect;
+  turnsRemaining: number;
+  sourceConsumable?: string; // Which consumable caused this
+}
+
 export interface Enemy {
   id: string;
   definitionId: string;
@@ -49,6 +65,8 @@ export interface Enemy {
   // State
   isAlerted: boolean;
   turnsStationary: number; // For tracking how long they've been in place
+  // Status effects from consumables
+  statusEffects?: EnemyStatus[];
 }
 
 // Enemy definitions per biome

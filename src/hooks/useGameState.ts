@@ -59,8 +59,9 @@ import {
   CHUNK_WIDTH,
   CHUNK_HEIGHT,
 } from '@/lib/chunkGenerator';
-import { processEnemyTurns, getAdjacentEnemies } from '@/lib/enemyAI';
-import { getEnemyDefinition, Enemy } from '@/types/enemies';
+import { processEnemyTurns, getAdjacentEnemies, applyStatusEffectToEnemies } from '@/lib/enemyAI';
+import { getEnemyDefinition, Enemy, EnemyStatusEffect, EnemyStatus } from '@/types/enemies';
+import { getConsumableDefinition, ConsumableType } from '@/data/consumableData';
 import { 
   showEnemyEncounterToast, 
   getCollisionEffects, 
@@ -2546,17 +2547,45 @@ export function useGameState() {
   // Fire a consumable at enemies
   const fireConsumable = useCallback((consumableIndex: number) => {
     if (!gameState) return;
+    if (!gameState.infiniteJunkyard) return;
     
     const primary = gameState.player.helpers.find(h => h.isPrimary);
     if (!primary) return;
     
     const consumable = primary.components.loadedConsumables[consumableIndex];
-    if (!consumable) return;
+    if (!consumable || !consumable.consumableType) return;
     
-    // Remove the consumable from loaded consumables
+    // Get the consumable definition to find which enemies it counters
+    const consumableDef = getConsumableDefinition(consumable.consumableType as ConsumableType);
+    if (!consumableDef) {
+      toast({
+        title: `${consumable.icon} ${consumable.name} deployed!`,
+        description: `Effect active in your vicinity.`,
+      });
+      return;
+    }
+    
+    // Map consumable types to status effects
+    const effectMapping: Record<string, { effect: EnemyStatusEffect; turns: number }> = {
+      'emp_grenade': { effect: 'stunned', turns: 3 },
+      'bait_canister': { effect: 'distracted', turns: 5 },
+      'cryo_spray': { effect: 'frozen', turns: 4 },
+      'sonic_pulse': { effect: 'scattered', turns: 3 },
+      'thermal_cloak': { effect: 'blinded', turns: 4 },
+      'data_spike': { effect: 'corrupted', turns: 4 },
+      'degausser': { effect: 'stunned', turns: 5 },
+      'neutralizer_foam': { effect: 'neutralized', turns: 99 },
+      'flash_flare': { effect: 'blinded', turns: 3 },
+      'holographic_decoy': { effect: 'distracted', turns: 6 },
+    };
+    
+    const effectConfig = effectMapping[consumable.consumableType] || { effect: 'stunned' as EnemyStatusEffect, turns: 3 };
+    
+    // Apply effects to all enemies in all loaded chunks
     setGameState(prev => {
-      if (!prev) return prev;
+      if (!prev || !prev.infiniteJunkyard) return prev;
       
+      // Remove the consumable from loaded consumables
       const newHelpers = prev.player.helpers.map(helper => {
         if (!helper.isPrimary) return helper;
         
@@ -2572,6 +2601,96 @@ export function useGameState() {
         };
       });
       
+      // Apply status effects to enemies in the current chunk
+      const { chunkX, chunkY } = worldToChunk(
+        prev.player.playerX, 
+        prev.player.playerY, 
+        CHUNK_WIDTH, 
+        CHUNK_HEIGHT
+      );
+      
+      const chunkKey = makeChunkKey(chunkX, chunkY);
+      const currentChunk = getChunkSafe(prev.infiniteJunkyard, chunkKey);
+      
+      let totalAffected = 0;
+      let affectedEnemyNames: string[] = [];
+      
+      if (currentChunk && currentChunk.enemies) {
+        const { localX, localY } = worldToLocal(
+          prev.player.playerX, 
+          prev.player.playerY, 
+          CHUNK_WIDTH, 
+          CHUNK_HEIGHT
+        );
+        
+        const { updatedEnemies, affectedCount } = applyStatusEffectToEnemies(
+          currentChunk.enemies,
+          consumableDef.countersEnemies,
+          { 
+            effect: effectConfig.effect, 
+            turnsRemaining: effectConfig.turns,
+            sourceConsumable: consumable.consumableType,
+          },
+          localX,
+          localY,
+          6 // Effect range
+        );
+        
+        totalAffected = affectedCount;
+        
+        // Get names of affected enemy types
+        if (affectedCount > 0) {
+          const affectedTypes = new Set<string>();
+          updatedEnemies.forEach(enemy => {
+            if (consumableDef.countersEnemies.includes(enemy.definitionId)) {
+              const def = getEnemyDefinition(enemy.definitionId);
+              if (def) affectedTypes.add(def.name);
+            }
+          });
+          affectedEnemyNames = Array.from(affectedTypes);
+        }
+        
+        // Update chunk with affected enemies
+        const updatedChunk = { ...currentChunk, enemies: updatedEnemies };
+        const newChunks = new Map(prev.infiniteJunkyard.chunks);
+        newChunks.set(chunkKey, updatedChunk);
+        
+        // Show toast with result
+        setTimeout(() => {
+          if (totalAffected > 0) {
+            toast({
+              title: `${consumable.icon} ${consumable.name} deployed!`,
+              description: `${consumableDef.effect} - Affected ${totalAffected} ${affectedEnemyNames.join(', ')}!`,
+            });
+          } else {
+            toast({
+              title: `${consumable.icon} ${consumable.name} deployed!`,
+              description: `No matching enemies in range. Counters: ${consumableDef.countersEnemies.map(id => getEnemyDefinition(id)?.name || id).slice(0, 2).join(', ')}...`,
+            });
+          }
+        }, 0);
+        
+        return {
+          ...prev,
+          player: {
+            ...prev.player,
+            helpers: newHelpers,
+          },
+          infiniteJunkyard: {
+            ...prev.infiniteJunkyard,
+            chunks: newChunks,
+          },
+        };
+      }
+      
+      // No enemies in current chunk
+      setTimeout(() => {
+        toast({
+          title: `${consumable.icon} ${consumable.name} deployed!`,
+          description: `No enemies nearby to affect.`,
+        });
+      }, 0);
+      
       return {
         ...prev,
         player: {
@@ -2579,12 +2698,6 @@ export function useGameState() {
           helpers: newHelpers,
         },
       };
-    });
-    
-    // Show toast with consumable effect
-    toast({
-      title: `${consumable.icon} ${consumable.name} deployed!`,
-      description: `Effect active in your vicinity.`,
     });
   }, [gameState]);
 

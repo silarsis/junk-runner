@@ -4,6 +4,7 @@ import { Search, Home, Package, Battery, BatteryWarning, MapPin, Compass } from 
 import { Button } from '@/components/ui/button';
 import { GameState, JunkPile, Bag, HelperRobot, TerrainType, Item, Junkyard } from '@/types/game';
 import { getEnemyDefinition, Enemy } from '@/types/enemies';
+import { hasStatusEffect } from '@/lib/enemyAI';
 import { TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
 import { 
   worldToChunk, 
@@ -549,24 +550,68 @@ export function JunkyardScreen({
                 })()}
                 
                 {/* Enemy */}
-                {isRevealed && enemy && enemyDef && !wall && (
-                  <motion.div
-                    className={cn(
-                      "absolute inset-0.5 rounded-sm flex items-center justify-center",
-                      enemyDef.threatLevel === 'nuisance' && "bg-yellow-500/20 ring-1 ring-yellow-500/40",
-                      enemyDef.threatLevel === 'moderate' && "bg-orange-500/20 ring-1 ring-orange-500/40",
-                      enemyDef.threatLevel === 'dangerous' && "bg-red-500/20 ring-1 ring-red-500/40",
-                      enemyDef.threatLevel === 'deadly' && "bg-red-700/30 ring-2 ring-red-600/60",
-                      enemy.isAlerted && "animate-pulse"
-                    )}
-                    initial={{ scale: 0 }}
-                    animate={{ scale: 1 }}
-                    transition={{ type: 'spring', damping: 15 }}
-                    title={`${enemyDef.name} - ${enemyDef.description}`}
-                  >
-                    <span className="text-base sm:text-lg">{enemyDef.icon}</span>
-                  </motion.div>
-                )}
+                {isRevealed && enemy && enemyDef && !wall && (() => {
+                  // Check for status effects
+                  const isStunned = hasStatusEffect(enemy, 'stunned');
+                  const isFrozen = hasStatusEffect(enemy, 'frozen');
+                  const isScattered = hasStatusEffect(enemy, 'scattered');
+                  const isBlinded = hasStatusEffect(enemy, 'blinded');
+                  const isCorrupted = hasStatusEffect(enemy, 'corrupted');
+                  const isDistracted = hasStatusEffect(enemy, 'distracted');
+                  const isNeutralized = hasStatusEffect(enemy, 'neutralized');
+                  const hasAnyEffect = isStunned || isFrozen || isScattered || isBlinded || isCorrupted || isDistracted || isNeutralized;
+                  
+                  // Get status effect icon
+                  const getStatusIcon = () => {
+                    if (isNeutralized) return '💨';
+                    if (isFrozen) return '❄️';
+                    if (isStunned) return '⚡';
+                    if (isScattered) return '💨';
+                    if (isBlinded) return '👁️';
+                    if (isCorrupted) return '💾';
+                    if (isDistracted) return '👤';
+                    return null;
+                  };
+                  
+                  const statusIcon = getStatusIcon();
+                  
+                  return (
+                    <motion.div
+                      className={cn(
+                        "absolute inset-0.5 rounded-sm flex items-center justify-center",
+                        !hasAnyEffect && enemyDef.threatLevel === 'nuisance' && "bg-yellow-500/20 ring-1 ring-yellow-500/40",
+                        !hasAnyEffect && enemyDef.threatLevel === 'moderate' && "bg-orange-500/20 ring-1 ring-orange-500/40",
+                        !hasAnyEffect && enemyDef.threatLevel === 'dangerous' && "bg-red-500/20 ring-1 ring-red-500/40",
+                        !hasAnyEffect && enemyDef.threatLevel === 'deadly' && "bg-red-700/30 ring-2 ring-red-600/60",
+                        // Status effect styling
+                        isStunned && "bg-yellow-300/30 ring-1 ring-yellow-400/60",
+                        isFrozen && "bg-cyan-400/30 ring-1 ring-cyan-500/60",
+                        isScattered && "bg-purple-400/20 ring-1 ring-purple-400/40",
+                        isBlinded && "bg-gray-400/30 ring-1 ring-gray-500/50",
+                        isCorrupted && "bg-green-500/20 ring-1 ring-green-500/40",
+                        isDistracted && "bg-blue-400/20 ring-1 ring-blue-400/40",
+                        isNeutralized && "bg-gray-600/30 ring-1 ring-gray-600/40 opacity-40",
+                        enemy.isAlerted && !hasAnyEffect && "animate-pulse"
+                      )}
+                      initial={{ scale: 0 }}
+                      animate={{ 
+                        scale: isNeutralized ? 0.5 : 1,
+                        opacity: isNeutralized ? 0.3 : 1,
+                      }}
+                      transition={{ type: 'spring', damping: 15 }}
+                      title={`${enemyDef.name}${hasAnyEffect ? ` (${statusIcon})` : ''} - ${enemyDef.description}`}
+                    >
+                      <span className={cn(
+                        "text-base sm:text-lg",
+                        hasAnyEffect && "opacity-60"
+                      )}>{enemyDef.icon}</span>
+                      {/* Status effect indicator */}
+                      {statusIcon && !isNeutralized && (
+                        <span className="absolute -top-0.5 -right-0.5 text-[10px]">{statusIcon}</span>
+                      )}
+                    </motion.div>
+                  );
+                })()}
                 
                 {/* Player */}
                 {isPlayer && (

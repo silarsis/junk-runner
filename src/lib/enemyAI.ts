@@ -1,6 +1,48 @@
 import { Junkyard } from '@/types/game';
-import { Enemy, getEnemyDefinition } from '@/types/enemies';
+import { Enemy, EnemyStatus, getEnemyDefinition } from '@/types/enemies';
 import { isTilePassable, getEnemyAt } from './terrainGenerator';
+
+// Decrement status effect turns and remove expired effects
+function tickStatusEffects(enemy: Enemy): Enemy {
+  if (!enemy.statusEffects || enemy.statusEffects.length === 0) {
+    return enemy;
+  }
+  
+  const updatedEffects = enemy.statusEffects
+    .map(effect => ({ ...effect, turnsRemaining: effect.turnsRemaining - 1 }))
+    .filter(effect => effect.turnsRemaining > 0);
+  
+  return {
+    ...enemy,
+    statusEffects: updatedEffects.length > 0 ? updatedEffects : undefined,
+  };
+}
+
+// Check if enemy has a specific status effect
+export function hasStatusEffect(enemy: Enemy, effect: string): boolean {
+  return enemy.statusEffects?.some(s => s.effect === effect) ?? false;
+}
+
+// Check if enemy can move (not stunned, frozen, etc.)
+function canEnemyMove(enemy: Enemy): boolean {
+  if (!enemy.statusEffects) return true;
+  return !enemy.statusEffects.some(s => 
+    s.effect === 'stunned' || 
+    s.effect === 'frozen' || 
+    s.effect === 'neutralized'
+  );
+}
+
+// Check if enemy can chase player (not blinded, distracted, etc.)
+function canEnemyChase(enemy: Enemy): boolean {
+  if (!enemy.statusEffects) return true;
+  return !enemy.statusEffects.some(s => 
+    s.effect === 'blinded' || 
+    s.effect === 'distracted' ||
+    s.effect === 'scattered' ||
+    s.effect === 'corrupted'
+  );
+}
 
 // Distance calculation (Manhattan for simplicity)
 function manhattanDistance(x1: number, y1: number, x2: number, y2: number): number {
@@ -183,6 +225,41 @@ function processChase(
   };
 }
 
+// Scatter behaviour: flee from player (when scattered status)
+function processScattered(
+  enemy: Enemy,
+  junkyard: Junkyard,
+  enemies: Enemy[],
+  playerX: number,
+  playerY: number
+): Enemy {
+  const validMoves = getValidMoves(enemy, junkyard, enemies);
+  
+  if (validMoves.length === 0) {
+    return { ...enemy, turnsStationary: enemy.turnsStationary + 1 };
+  }
+  
+  // Find move that gets FURTHEST from player
+  let bestMove = validMoves[0];
+  let bestDistance = manhattanDistance(bestMove.x, bestMove.y, playerX, playerY);
+  
+  for (const move of validMoves) {
+    const dist = manhattanDistance(move.x, move.y, playerX, playerY);
+    if (dist > bestDistance) {
+      bestDistance = dist;
+      bestMove = move;
+    }
+  }
+  
+  return {
+    ...enemy,
+    x: bestMove.x,
+    y: bestMove.y,
+    isAlerted: false, // Running away, not alerted
+    turnsStationary: 0,
+  };
+}
+
 // Process a single enemy's turn
 function processEnemyTurn(
   enemy: Enemy,
@@ -194,38 +271,68 @@ function processEnemyTurn(
   const definition = getEnemyDefinition(enemy.definitionId);
   if (!definition) return enemy;
   
+  // Tick down status effects first
+  let processedEnemy = tickStatusEffects(enemy);
+  
+  // Check for neutralized - enemy is removed from play
+  if (hasStatusEffect(processedEnemy, 'neutralized')) {
+    // Move enemy far off-screen effectively
+    return { ...processedEnemy, x: -1000, y: -1000 };
+  }
+  
+  // Check for stunned or frozen - can't move at all
+  if (!canEnemyMove(processedEnemy)) {
+    return processedEnemy; // Just return with ticked status
+  }
+  
+  // Check for scattered - flee from player
+  if (hasStatusEffect(processedEnemy, 'scattered')) {
+    return processScattered(processedEnemy, junkyard, enemies, playerX, playerY);
+  }
+  
+  // Check for blinded/corrupted/distracted - can't chase, wander instead
+  const canChase = canEnemyChase(processedEnemy);
+  
   // Stationary enemies don't move
   if (definition.behaviour === 'stationary') {
     // Check if player is adjacent to become alerted
-    const distToPlayer = manhattanDistance(enemy.x, enemy.y, playerX, playerY);
-    return { ...enemy, isAlerted: distToPlayer <= 1 };
+    const distToPlayer = manhattanDistance(processedEnemy.x, processedEnemy.y, playerX, playerY);
+    return { ...processedEnemy, isAlerted: distToPlayer <= 1 };
   }
   
   // Ambush enemies don't move until revealed/triggered
   if (definition.behaviour === 'ambush') {
     // For now, ambush enemies stay put unless player is adjacent
-    const distToPlayer = manhattanDistance(enemy.x, enemy.y, playerX, playerY);
+    const distToPlayer = manhattanDistance(processedEnemy.x, processedEnemy.y, playerX, playerY);
     if (distToPlayer <= 2) {
-      // Triggered! Start chasing
-      return processChase(enemy, junkyard, enemies, playerX, playerY);
+      // Triggered! Start chasing (if able)
+      if (canChase) {
+        return processChase(processedEnemy, junkyard, enemies, playerX, playerY);
+      } else {
+        return processWander(processedEnemy, junkyard, enemies, playerX, playerY);
+      }
     }
-    return enemy;
+    return processedEnemy;
   }
   
   // Terrain-based movement (simplified to wander for now)
   if (definition.behaviour === 'terrain') {
-    return processWander(enemy, junkyard, enemies, playerX, playerY);
+    return processWander(processedEnemy, junkyard, enemies, playerX, playerY);
   }
   
   switch (definition.behaviour) {
     case 'wander':
-      return processWander(enemy, junkyard, enemies, playerX, playerY);
+      return processWander(processedEnemy, junkyard, enemies, playerX, playerY);
     case 'patrol':
-      return processPatrol(enemy, junkyard, enemies, playerX, playerY);
+      return processPatrol(processedEnemy, junkyard, enemies, playerX, playerY);
     case 'chase':
-      return processChase(enemy, junkyard, enemies, playerX, playerY);
+      // If blinded/distracted/corrupted, wander instead of chase
+      if (!canChase) {
+        return processWander(processedEnemy, junkyard, enemies, playerX, playerY);
+      }
+      return processChase(processedEnemy, junkyard, enemies, playerX, playerY);
     default:
-      return enemy;
+      return processedEnemy;
   }
 }
 
@@ -259,12 +366,17 @@ export function processEnemyTurns(
 }
 
 // Check if player is adjacent to any enemy (for adjacency effects)
+// Ignores enemies that are stunned or neutralized
 export function getAdjacentEnemies(
   enemies: Enemy[],
   playerX: number,
   playerY: number
 ): Enemy[] {
   return enemies.filter(enemy => {
+    // Skip neutralized or frozen enemies for adjacency effects
+    if (hasStatusEffect(enemy, 'neutralized')) return false;
+    if (hasStatusEffect(enemy, 'stunned')) return false;
+    
     const dist = manhattanDistance(enemy.x, enemy.y, playerX, playerY);
     return dist === 1;
   });
@@ -277,4 +389,43 @@ export function getEnemyAtPlayer(
   playerY: number
 ): Enemy | null {
   return enemies.find(enemy => enemy.x === playerX && enemy.y === playerY) || null;
+}
+
+// Apply a status effect to enemies matching the given definition IDs
+export function applyStatusEffectToEnemies(
+  enemies: Enemy[],
+  targetDefinitionIds: string[],
+  effect: EnemyStatus,
+  playerX: number,
+  playerY: number,
+  range: number = 5 // Effect range in tiles
+): { updatedEnemies: Enemy[]; affectedCount: number } {
+  let affectedCount = 0;
+  
+  const updatedEnemies = enemies.map(enemy => {
+    // Check if enemy is within range
+    const dist = manhattanDistance(enemy.x, enemy.y, playerX, playerY);
+    if (dist > range) return enemy;
+    
+    // Check if this enemy type is targeted
+    if (!targetDefinitionIds.includes(enemy.definitionId)) return enemy;
+    
+    affectedCount++;
+    
+    // Add or update status effect
+    const existingEffects = enemy.statusEffects || [];
+    const existingIndex = existingEffects.findIndex(e => e.effect === effect.effect);
+    
+    if (existingIndex >= 0) {
+      // Refresh duration if already has this effect
+      const newEffects = [...existingEffects];
+      newEffects[existingIndex] = { ...effect };
+      return { ...enemy, statusEffects: newEffects };
+    } else {
+      // Add new effect
+      return { ...enemy, statusEffects: [...existingEffects, effect] };
+    }
+  });
+  
+  return { updatedEnemies, affectedCount };
 }
