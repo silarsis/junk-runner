@@ -1438,8 +1438,12 @@ export function useGameState() {
       let updatedJunkyard = prev.infiniteJunkyard;
       
       if (newProgress >= pile.requiredTurns) {
-        // Generate loot with distance-based rarity
-        const loot = generateLootForChunk(Date.now() + pileIndex, chunkX, chunkY);
+        // Generate loot with deterministic seed matching preview
+        // Use world coordinates so seed is unique across all chunks
+        const pileWorldX = chunkX * CHUNK_WIDTH + pile.x;
+        const pileWorldY = chunkY * CHUNK_HEIGHT + pile.y;
+        const pileSeed = prev.infiniteJunkyard.baseSeed + pileWorldX * 1000 + pileWorldY;
+        const loot = generateLootForChunk(pileSeed, chunkX, chunkY);
         updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress, isDepleted: true };
         
         // Get current bag
@@ -2413,15 +2417,28 @@ export function useGameState() {
   }, [gameState]);
 
   // Get or generate items for a pile (for scanner preview)
-  const getPilePreview = useCallback((pile: JunkPile): Item[] => {
+  // Takes world coordinates to ensure consistent seed across chunks
+  const getPilePreview = useCallback((pile: JunkPile, worldX?: number, worldY?: number): Item[] => {
     // If items already pre-generated, return them
     if (pile.preGeneratedItems) {
       return pile.preGeneratedItems;
     }
-    // Generate items based on pile's position using chunk-based loot
-    const pileSeed = gameState?.infiniteJunkyard?.baseSeed ?? gameState?.junkyardSeed ?? 0;
-    // Use local coordinates for seed variation
-    return generateLootForChunk(pileSeed + pile.x * 1000 + pile.y, 0, 0);
+    
+    const baseSeed = gameState?.infiniteJunkyard?.baseSeed ?? gameState?.junkyardSeed ?? 0;
+    
+    // Use world coordinates if provided, otherwise fall back to local coords
+    // This ensures the seed is unique per pile across all chunks
+    const pileWorldX = worldX ?? pile.x;
+    const pileWorldY = worldY ?? pile.y;
+    
+    // Calculate chunk from world coords for proper rarity scaling
+    const chunkX = Math.floor(pileWorldX / CHUNK_WIDTH);
+    const chunkY = Math.floor(pileWorldY / CHUNK_HEIGHT);
+    
+    // Seed combines base seed with world position for uniqueness
+    const pileSeed = baseSeed + pileWorldX * 1000 + pileWorldY;
+    
+    return generateLootForChunk(pileSeed, chunkX, chunkY);
   }, [gameState?.infiniteJunkyard?.baseSeed, gameState?.junkyardSeed]);
 
   // Buy an item from the shop
