@@ -299,9 +299,10 @@ export function JunkyardScreen({
     return dx <= 1 && dy <= 1 && !(dx === 0 && dy === 0);
   };
 
-  // Get scanned items for an adjacent pile
+  // Get scanned items for an adjacent pile (requires scanner module)
   const getScannedItems = (pile: JunkPile, pileWorldX: number, pileWorldY: number): Item[] => {
-    if (!getPilePreview || pileRevealCount === 0) return [];
+    // Must have a scanner module with pileRevealCount > 0
+    if (!getPilePreview || !pileRevealCount || pileRevealCount <= 0) return [];
     if (!isPileAdjacent(pileWorldX, pileWorldY) || pile.isDepleted) return [];
     // Pass world coordinates for consistent seed calculation
     const items = getPilePreview(pile, pileWorldX, pileWorldY);
