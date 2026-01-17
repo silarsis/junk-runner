@@ -67,6 +67,7 @@ interface JunkyardScreenProps {
   onMove: (dx: number, dy: number) => void;
   currentPile: JunkPile | null;
   onSearch: () => void;
+  onWait: () => void;
   onReturnToBase: () => void;
   onOpenInventory: () => void;
   pileRevealCount?: number;
@@ -243,6 +244,7 @@ export function JunkyardScreen({
   onMove,
   currentPile,
   onSearch,
+  onWait,
   onReturnToBase,
   onOpenInventory,
   pileRevealCount = 0,
@@ -252,6 +254,7 @@ export function JunkyardScreen({
   onFireConsumable,
 }: JunkyardScreenProps) {
   const { infiniteJunkyard, player, turnCount } = gameState;
+  const [inspectInfo, setInspectInfo] = useState<{ x: number; y: number; content: string; effect?: string } | null>(null);
   
   if (!infiniteJunkyard) return null;
 
@@ -305,26 +308,122 @@ export function JunkyardScreen({
   const validMoveTargets = getValidMoveTargets(player.playerX, player.playerY, movementType, infiniteJunkyard);
   const enemyThreatTiles = getEnemyThreatTiles(infiniteJunkyard, viewportTiles);
 
-  const handleTileClick = (worldX: number, worldY: number) => {
+  // Handle tapping on self (player tile)
+  const handleSelfTap = () => {
     if (isBatteryEmpty) return;
     
-    const dx = worldX - player.playerX;
-    const dy = worldY - player.playerY;
+    // If on a pile, search it; otherwise wait a turn
+    if (currentPile && !currentPile.isDepleted) {
+      onSearch();
+    } else {
+      onWait();
+    }
+  };
+
+  // Get info about a tile for inspection
+  const getTileInfo = (worldX: number, worldY: number): { name: string; effect?: string } | null => {
+    const { isRevealed, pile, wall, terrain, barrier, enemy } = getTileDataAtWorld(infiniteJunkyard, worldX, worldY);
+    if (!isRevealed) return null;
     
-    if (isValidMove(dx, dy, movementType)) {
-      if (movementType !== 'jump' && !isWorldTilePassable(infiniteJunkyard, worldX, worldY)) {
-        // Check for spider legs wall traversal
-        const wall = getWorldWallAt(infiniteJunkyard, worldX, worldY);
-        const primary = player.helpers.find(h => h.isPrimary);
-        const mobilityName = primary?.components.mobility?.name?.toLowerCase() || '';
-        if (!(wall && mobilityName.includes('spider'))) {
-          return;
-        }
+    // Check for enemy
+    if (enemy) {
+      const def = getEnemyDefinition(enemy.definitionId);
+      if (def) {
+        return {
+          name: `${def.icon} ${def.name}`,
+          effect: def.description,
+        };
       }
-      if (movementType === 'jump' && !isWorldTilePassable(infiniteJunkyard, worldX, worldY)) {
-        return;
-      }
+    }
+    
+    // Check for wall
+    if (wall) {
+      return {
+        name: `${wall.icon} Obstacle`,
+        effect: 'Impassable debris',
+      };
+    }
+    
+    // Check for barrier
+    if (barrier) {
+      return {
+        name: `${barrier.icon} Barrier`,
+        effect: barrier.isPassable ? 'Passable obstruction' : 'Blocked path',
+      };
+    }
+    
+    // Check for pile
+    if (pile) {
+      return {
+        name: `📦 Junk Pile`,
+        effect: pile.isDepleted ? 'Already searched' : `${pile.requiredTurns} turns to search`,
+      };
+    }
+    
+    // Check for terrain
+    if (terrain) {
+      const terrainInfo = TERRAIN_DISPLAY[terrain.type];
+      return {
+        name: `${terrain.icon} ${terrainInfo?.name || terrain.type}`,
+        effect: getTerrainEffectDescription(terrain.type),
+      };
+    }
+    
+    return null;
+  };
+
+  // Get terrain effect description
+  const getTerrainEffectDescription = (type: string): string => {
+    const effects: Record<string, string> = {
+      mud: 'Costs 2 battery (treads ignore)',
+      toxic: 'Damages item condition',
+      oil: 'Slide 1 tile in movement direction',
+      electric: 'Drains 3 battery',
+      magnetic: 'Heavy items weigh 2x',
+      fog: 'Reduces visibility to 1 tile',
+      irradiated: 'Costs 2 battery, damages components',
+      cooling_trench: 'Costs 2 battery',
+      cratered: 'Rough terrain',
+      cable_sprawl: 'Costs 2 battery',
+      broken_pavement: 'Uneven ground',
+      neon_pool: 'Costs 2 battery',
+      oil_slick: 'Slide in movement direction',
+      assembly_line: 'Moving machinery',
+      collapsed_catwalk: 'Costs 2 battery',
+      organic_sludge: 'Costs 2 battery',
+      flesh_mound: 'Biological hazard',
+      drainage: 'Slippery grating',
+      cooling_fog: 'Reduces visibility',
+      server_rack: 'Electronic interference',
+      magnetic_floor: 'Magnetic field',
+    };
+    return effects[type] || 'Hazardous terrain';
+  };
+
+  const handleTileClick = (worldX: number, worldY: number, isPlayer: boolean, canMoveTo: boolean) => {
+    // If tapping on self, handle self-tap
+    if (isPlayer) {
+      handleSelfTap();
+      return;
+    }
+    
+    // If can move to tile, move there
+    if (canMoveTo && !isBatteryEmpty) {
+      setInspectInfo(null);
+      const dx = worldX - player.playerX;
+      const dy = worldY - player.playerY;
       onMove(dx, dy);
+      return;
+    }
+    
+    // Otherwise, show info about the tile (if revealed)
+    const info = getTileInfo(worldX, worldY);
+    if (info) {
+      setInspectInfo({ x: worldX, y: worldY, content: info.name, effect: info.effect });
+      // Auto-dismiss after 3 seconds
+      setTimeout(() => setInspectInfo(prev => 
+        prev?.x === worldX && prev?.y === worldY ? null : prev
+      ), 3000);
     }
   };
 
@@ -460,19 +559,21 @@ export function JunkyardScreen({
                   isRevealed && !wall && terrainStyle && terrainStyle.bg,
                   isRevealed && !wall && terrainStyle && `border ${terrainStyle.border}`,
                   isRevealed && wall && "bg-muted",
-                  isPlayer && "ring-2 ring-primary ring-inset bg-primary/20",
+                  isPlayer && "ring-2 ring-primary ring-inset bg-primary/20 cursor-pointer",
                   isEntranceTile && isRevealed && !isPlayer && "ring-1 ring-accent ring-inset",
                   canMoveTo && "ring-1 ring-primary/50 cursor-pointer hover:bg-primary/10 active:scale-95",
-                  !canMoveTo && !isPlayer && "cursor-default",
-                  isBatteryEmpty && isTarget && "opacity-50"
+                  !canMoveTo && !isPlayer && isRevealed && "cursor-pointer",
+                  !isRevealed && "cursor-default",
+                  isBatteryEmpty && isTarget && "opacity-50",
+                  inspectInfo?.x === worldX && inspectInfo?.y === worldY && "ring-2 ring-accent"
                 )}
                 style={{ width: cellSize, height: cellSize }}
-                onClick={() => canMoveTo && handleTileClick(worldX, worldY)}
-                disabled={!canMoveTo}
+                onClick={() => (isRevealed || isPlayer) && handleTileClick(worldX, worldY, isPlayer, canMoveTo)}
+                disabled={!isRevealed && !isPlayer}
                 initial={isRevealed ? { opacity: 0, scale: 0.8 } : {}}
                 animate={isRevealed ? { opacity: 1, scale: 1 } : {}}
                 transition={{ duration: 0.2 }}
-                whileTap={canMoveTo ? { scale: 0.9 } : {}}
+                whileTap={(isPlayer || canMoveTo || isRevealed) ? { scale: 0.95 } : {}}
               >
                 {/* Enemy threat range overlay */}
                 {isRevealed && threatInfo && !enemy && (
@@ -632,6 +733,22 @@ export function JunkyardScreen({
             );
           })}
         </div>
+
+        {/* Inspect Info Tooltip */}
+        {inspectInfo && (
+          <motion.div
+            className="mt-2 px-4 py-2 bg-muted/90 border border-border rounded-lg text-center max-w-[280px]"
+            initial={{ opacity: 0, y: -10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            onClick={() => setInspectInfo(null)}
+          >
+            <p className="text-sm font-medium">{inspectInfo.content}</p>
+            {inspectInfo.effect && (
+              <p className="text-xs text-muted-foreground mt-0.5">{inspectInfo.effect}</p>
+            )}
+          </motion.div>
+        )}
 
         {/* Search Progress */}
         {currentPile && !currentPile.isDepleted && (
