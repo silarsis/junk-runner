@@ -45,6 +45,19 @@ export function ScavengeScreen({
 }: ScavengeScreenProps) {
   const [showLoadout, setShowLoadout] = useState(false);
 
+  // Defensive check - ensure biome is available before rendering
+  if (!biome) {
+    return (
+      <motion.div
+        className="fixed inset-0 z-50 bg-background flex items-center justify-center"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+      >
+        <p className="text-muted-foreground">Loading scavenge data...</p>
+      </motion.div>
+    );
+  }
+
   return (
     <motion.div
       className="fixed inset-0 z-50 bg-background flex flex-col"
