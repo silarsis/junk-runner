@@ -61,7 +61,7 @@ import {
 } from '@/lib/chunkGenerator';
 import { processEnemyTurns, getAdjacentEnemies, applyStatusEffectToEnemies } from '@/lib/enemyAI';
 import { getEnemyDefinition, Enemy, EnemyStatusEffect, EnemyStatus } from '@/types/enemies';
-import { getConsumableDefinition, ConsumableType } from '@/data/consumableData';
+import { getConsumableDefinition, ConsumableType, CONSUMABLE_DEFINITIONS } from '@/data/consumableData';
 import { 
   showEnemyEncounterToast, 
   getCollisionEffects, 
@@ -199,19 +199,20 @@ function generateLoot(seed: number): Item[] {
   return items;
 }
 
-// Generate shop inventory - only scrap and components, no modules/storage/junk
+// Generate shop inventory - scrap, components, and consumables
 function generateShopInventory(seed: number): ShopItem[] {
   const random = seededRandom(seed);
-  // Random number of items 4-8
-  const itemCount = 4 + Math.floor(random() * 5);
   const items: ShopItem[] = [];
+  
+  // Regular items: 4-6
+  const regularItemCount = 4 + Math.floor(random() * 3);
   
   // Filter templates to only scrap and components
   const shopTemplates = ITEM_TEMPLATES.filter(
     t => t.category === 'scrap' || t.category === 'component'
   );
   
-  for (let i = 0; i < itemCount; i++) {
+  for (let i = 0; i < regularItemCount; i++) {
     const rarity = pickRarity(random);
     const templates = shopTemplates.filter(t => t.rarity === rarity);
     if (templates.length === 0) continue;
@@ -243,6 +244,37 @@ function generateShopInventory(seed: number): ShopItem[] {
     const buyPrice = Math.ceil(cleanSellPrice * 1.1);
     
     items.push({ item, buyPrice });
+  }
+  
+  // Add consumables: 2-4 random consumables
+  const consumableCount = 2 + Math.floor(random() * 3);
+  const shuffledConsumables = [...CONSUMABLE_DEFINITIONS].sort(() => random() - 0.5);
+  
+  for (let i = 0; i < Math.min(consumableCount, shuffledConsumables.length); i++) {
+    const consumableDef = shuffledConsumables[i];
+    
+    const consumableItem: Item = {
+      id: uuidv4(),
+      name: consumableDef.name,
+      category: 'consumable',
+      rarity: 'uncommon', // Base rarity for consumables
+      condition: 100,
+      isDirty: false,
+      sizeW: 1,
+      sizeH: 1,
+      weight: 0.5,
+      baseValue: 15, // Base value for consumables
+      hiddenModifiers: [],
+      revealedModifiers: [],
+      icon: consumableDef.icon,
+      consumableType: consumableDef.id,
+    };
+    
+    // Consumable buy price: 20-35 based on how many enemies it counters
+    const counterBonus = consumableDef.countersEnemies.length * 3;
+    const buyPrice = 20 + counterBonus;
+    
+    items.push({ item: consumableItem, buyPrice });
   }
   
   return items;
