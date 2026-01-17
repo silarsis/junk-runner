@@ -62,6 +62,7 @@ const Index = () => {
     loadConsumable,
     unloadConsumable,
     getLoadedConsumables,
+    waitTurn,
   } = useGameState();
 
   // Get launcher info for loadout
@@ -219,6 +220,7 @@ const Index = () => {
             onMove={movePlayer}
             currentPile={currentPile}
             onSearch={searchPile}
+            onWait={waitTurn}
             onReturnToBase={handleReturnToBase}
             onOpenInventory={() => setShowInventory(true)}
             pileRevealCount={getPileRevealCount()}

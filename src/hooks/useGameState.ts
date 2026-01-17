@@ -1620,6 +1620,126 @@ export function useGameState() {
     });
   }, [bagItems]);
 
+  // Wait one turn without moving - processes enemy turns and costs 1 battery
+  const waitTurn = useCallback(() => {
+    setGameState(prev => {
+      if (!prev || !prev.infiniteJunkyard) return prev;
+      
+      // Check battery
+      if (prev.player.currentCharge <= 0) {
+        return prev;
+      }
+      
+      const { chunkX, chunkY } = worldToChunk(
+        prev.player.playerX,
+        prev.player.playerY,
+        CHUNK_WIDTH,
+        CHUNK_HEIGHT
+      );
+      const { localX, localY } = worldToLocal(
+        prev.player.playerX,
+        prev.player.playerY,
+        CHUNK_WIDTH,
+        CHUNK_HEIGHT
+      );
+      
+      const chunkKey = makeChunkKey(chunkX, chunkY);
+      const chunk = getChunkSafe(prev.infiniteJunkyard, chunkKey);
+      if (!chunk) return prev;
+      
+      let updatedJunkyard = prev.infiniteJunkyard;
+      const updatedChunk = { ...chunk };
+      
+      const newTurnCount = prev.turnCount + 1;
+      let newCharge = prev.player.currentCharge - 1;
+      
+      // Solar panel regeneration
+      const primary = getPrimaryHelper(prev.player);
+      if (primary) {
+        const solarRate = getSolarRegenRate(primary);
+        if (solarRate !== null) {
+          const maxCapacity = getMaxBatteryCapacity(primary);
+          const regenAmount = calculateSolarRegen(newTurnCount, solarRate, maxCapacity, newCharge);
+          newCharge = Math.min(maxCapacity, newCharge + regenAmount);
+        }
+      }
+      
+      // Process enemy turns in this chunk
+      if (updatedChunk.enemies && updatedChunk.enemies.length > 0) {
+        const tempJunkyard: Junkyard = {
+          yardId: updatedJunkyard.yardId,
+          seed: updatedChunk.seed,
+          biomeId: updatedJunkyard.biomeId,
+          width: CHUNK_WIDTH,
+          height: CHUNK_HEIGHT,
+          revealedTiles: updatedChunk.revealedTiles,
+          piles: updatedChunk.piles,
+          walls: updatedChunk.walls,
+          terrain: updatedChunk.terrain,
+          barriers: updatedChunk.barriers,
+          droppedItems: updatedChunk.droppedItems,
+          enemies: updatedChunk.enemies,
+        };
+        
+        const { updatedEnemies, playerCollision } = processEnemyTurns(tempJunkyard, localX, localY);
+        updatedChunk.enemies = updatedEnemies;
+        
+        // Check for adjacent enemies
+        const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
+        const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
+        
+        for (const enemy of adjacentEnemies) {
+          const def = getEnemyDefinition(enemy.definitionId);
+          if (!def) continue;
+          
+          const effects = getAdjacencyEffects(def, enemy.turnsStationary);
+          if (effects.batteryDrain > 0) {
+            newCharge = Math.max(0, newCharge - effects.batteryDrain);
+            adjacencyDrainInfo.push({ definition: def, batteryDrain: effects.batteryDrain });
+          }
+        }
+        
+        if (adjacencyDrainInfo.length > 0) {
+          setTimeout(() => {
+            showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
+          }, 0);
+        }
+        
+        // Handle collision
+        if (playerCollision) {
+          const def = getEnemyDefinition(playerCollision.definitionId);
+          if (def) {
+            const collisionEffects = getCollisionEffects(def);
+            newCharge = Math.max(0, newCharge - (collisionEffects.batteryDrain || 0));
+            
+            setTimeout(() => {
+              showEnemyEncounterToast(collisionEffects);
+            }, 0);
+          }
+        }
+      }
+      
+      // Update chunks
+      updatedJunkyard = setChunkSafe(updatedJunkyard, chunkKey, updatedChunk);
+      
+      toast({
+        title: "⏳ Waiting...",
+        description: "You pass the time cautiously.",
+        duration: 1500,
+      });
+      
+      return {
+        ...prev,
+        infiniteJunkyard: updatedJunkyard,
+        player: { 
+          ...prev.player, 
+          currentCharge: newCharge,
+        },
+        turnCount: newTurnCount,
+      };
+    });
+  }, []);
+
   // Calculate charging cost based on charger efficiency upgrade
   const getChargingCost = useCallback((chargeNeeded: number, chargerLevel: number): number => {
     const costPerUnit = UPGRADES.chargerEfficiency.getValue(chargerLevel);
@@ -2886,5 +3006,7 @@ export function useGameState() {
     loadConsumable,
     unloadConsumable,
     getLoadedConsumables,
+    // Wait turn
+    waitTurn,
   };
 }
