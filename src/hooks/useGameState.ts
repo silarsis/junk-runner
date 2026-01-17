@@ -2258,6 +2258,7 @@ export function useGameState() {
         storageMaxWeight: recipe.output?.storageMaxWeight,
         movementType: recipe.output?.movementType,
         solarRegenRate: recipe.output?.solarRegenRate,
+        pileRevealCount: recipe.output?.pileRevealCount,
       };
       
       // Consume ingredients
