@@ -33,6 +33,8 @@ const CATEGORY_CONFIG: Record<ItemCategory, { label: string; icon: string }> = {
   battery: { label: 'Battery', icon: '🔋' },
   mobility: { label: 'Mobility', icon: '⛓️' },
   storage: { label: 'Storage', icon: '🗃️' },
+  consumable: { label: 'Consumable', icon: '💊' },
+  launcher: { label: 'Launcher', icon: '🎯' },
 };
 
 const DEFAULT_RARITY_ORDER: Rarity[] = ['legendary', 'epic', 'rare', 'uncommon', 'common'];

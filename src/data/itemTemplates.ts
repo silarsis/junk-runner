@@ -201,3 +201,22 @@ export function createBasicMobility(): Item {
     movementType: 'basic',
   };
 }
+
+export function createBasicLauncher(): Item {
+  return {
+    id: 'basic-launcher',
+    name: 'Basic Launcher',
+    category: 'launcher',
+    rarity: 'common',
+    condition: 100,
+    isDirty: false,
+    sizeW: 1,
+    sizeH: 1,
+    weight: 2,
+    baseValue: 0,
+    hiddenModifiers: [],
+    revealedModifiers: [],
+    icon: '🎯',
+    launcherCapacity: 1,
+  };
+}

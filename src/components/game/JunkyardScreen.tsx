@@ -24,6 +24,7 @@ import {
   getChunkSafe,
 } from '@/lib/chunkGenerator';
 import { cn } from '@/lib/utils';
+import { ConsumableToolbar } from './ConsumableToolbar';
 
 // Viewport size (tiles visible around player)
 const VIEWPORT_RADIUS = 5; // 11x11 viewport
@@ -69,6 +70,9 @@ interface JunkyardScreenProps {
   onOpenInventory: () => void;
   pileRevealCount?: number;
   getPilePreview?: (pile: JunkPile) => Item[];
+  loadedConsumables: Item[];
+  launcherCapacity: number;
+  onFireConsumable: (index: number) => void;
 }
 
 // Get movement type from primary helper
@@ -242,6 +246,9 @@ export function JunkyardScreen({
   onOpenInventory,
   pileRevealCount = 0,
   getPilePreview,
+  loadedConsumables,
+  launcherCapacity,
+  onFireConsumable,
 }: JunkyardScreenProps) {
   const { infiniteJunkyard, player, turnCount } = gameState;
   
@@ -341,6 +348,15 @@ export function JunkyardScreen({
             <Compass className="w-3 h-3 text-primary" />
             <span className="font-mono">{chunkDistance}</span>
           </div>
+          {/* Consumable toolbar */}
+          {launcherCapacity > 0 && (
+            <ConsumableToolbar
+              loadedConsumables={loadedConsumables}
+              launcherCapacity={launcherCapacity}
+              onFireConsumable={onFireConsumable}
+              disabled={isBatteryEmpty}
+            />
+          )}
         </div>
         
         {/* Battery indicator */}

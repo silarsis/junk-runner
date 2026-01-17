@@ -140,4 +140,6 @@ export const CATEGORY_DISPLAY: Record<ItemCategory, { name: string; icon: string
   mobility: { name: 'Mobility', icon: '🛞' },
   module: { name: 'Modules', icon: '📡' },
   junk: { name: 'Junk', icon: '🥫' },
+  consumable: { name: 'Consumables', icon: '💊' },
+  launcher: { name: 'Launchers', icon: '🎯' },
 };
