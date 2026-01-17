@@ -71,7 +71,7 @@ interface JunkyardScreenProps {
   onReturnToBase: () => void;
   onOpenInventory: () => void;
   pileRevealCount?: number;
-  getPilePreview?: (pile: JunkPile) => Item[];
+  getPilePreview?: (pile: JunkPile, worldX?: number, worldY?: number) => Item[];
   loadedConsumables: Item[];
   launcherCapacity: number;
   onFireConsumable: (index: number) => void;
@@ -303,7 +303,8 @@ export function JunkyardScreen({
   const getScannedItems = (pile: JunkPile, pileWorldX: number, pileWorldY: number): Item[] => {
     if (!getPilePreview || pileRevealCount === 0) return [];
     if (!isPileAdjacent(pileWorldX, pileWorldY) || pile.isDepleted) return [];
-    const items = getPilePreview(pile);
+    // Pass world coordinates for consistent seed calculation
+    const items = getPilePreview(pile, pileWorldX, pileWorldY);
     return items.slice(0, pileRevealCount);
   };
 
