@@ -58,6 +58,8 @@ const Index = () => {
     craftCleaningBot,
     toggleCleaningBot,
     updateCleaningBotPriorities,
+    fireConsumable,
+    getLoadedConsumables,
   } = useGameState();
 
   // Show terrain toast when stepping on terrain
@@ -195,6 +197,9 @@ const Index = () => {
             onOpenInventory={() => setShowInventory(true)}
             pileRevealCount={getPileRevealCount()}
             getPilePreview={getPilePreview}
+            loadedConsumables={getLoadedConsumables().consumables}
+            launcherCapacity={getLoadedConsumables().capacity}
+            onFireConsumable={fireConsumable}
           />
         )}
 

@@ -39,6 +39,7 @@ import {
   createBasicBattery,
   createBasicStorage,
   createBasicMobility,
+  createBasicLauncher,
 } from '@/data/itemTemplates';
 import { generateJunkyard, isTilePassable, getTerrainAt, getEnemyAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
 import { 
@@ -92,6 +93,8 @@ function createPrimaryHelper(): HelperRobot {
       mobility: createBasicMobility(),
       modules: [createBasicStorage()],
       battery: createBasicBattery(),
+      launcher: createBasicLauncher(),
+      loadedConsumables: [],
     },
     isDeployed: true,
     isPrimary: true,
@@ -2115,6 +2118,8 @@ export function useGameState() {
           mobility: createBasicMobility(),
           modules: [createBasicStorage()],
           battery: createBasicBattery(),
+          launcher: null,
+          loadedConsumables: [],
         },
         isDeployed: false,
         isPrimary: false,
@@ -2538,6 +2543,160 @@ export function useGameState() {
     });
   }, [getChargingCost, processAutoCleaning]);
 
+  // Fire a consumable at enemies
+  const fireConsumable = useCallback((consumableIndex: number) => {
+    if (!gameState) return;
+    
+    const primary = gameState.player.helpers.find(h => h.isPrimary);
+    if (!primary) return;
+    
+    const consumable = primary.components.loadedConsumables[consumableIndex];
+    if (!consumable) return;
+    
+    // Remove the consumable from loaded consumables
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const newHelpers = prev.player.helpers.map(helper => {
+        if (!helper.isPrimary) return helper;
+        
+        const newLoadedConsumables = [...helper.components.loadedConsumables];
+        newLoadedConsumables.splice(consumableIndex, 1);
+        
+        return {
+          ...helper,
+          components: {
+            ...helper.components,
+            loadedConsumables: newLoadedConsumables,
+          },
+        };
+      });
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          helpers: newHelpers,
+        },
+      };
+    });
+    
+    // Show toast with consumable effect
+    toast({
+      title: `${consumable.icon} ${consumable.name} deployed!`,
+      description: `Effect active in your vicinity.`,
+    });
+  }, [gameState]);
+
+  // Load a consumable into the launcher
+  const loadConsumable = useCallback((consumableId: string) => {
+    if (!gameState) return;
+    
+    const primary = gameState.player.helpers.find(h => h.isPrimary);
+    if (!primary?.components.launcher) return;
+    
+    const launcherCapacity = primary.components.launcher.launcherCapacity || 1;
+    if (primary.components.loadedConsumables.length >= launcherCapacity) {
+      toast({
+        title: "Launcher Full",
+        description: "Remove a consumable or upgrade your launcher.",
+        variant: "destructive",
+      });
+      return;
+    }
+    
+    // Find the consumable in stash
+    const consumable = gameState.player.stash.find(item => item.id === consumableId);
+    if (!consumable || consumable.category !== 'consumable') return;
+    
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      // Remove from stash
+      const newStash = prev.player.stash.filter(item => item.id !== consumableId);
+      
+      // Add to loaded consumables
+      const newHelpers = prev.player.helpers.map(helper => {
+        if (!helper.isPrimary) return helper;
+        
+        return {
+          ...helper,
+          components: {
+            ...helper.components,
+            loadedConsumables: [...helper.components.loadedConsumables, consumable],
+          },
+        };
+      });
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          stash: newStash,
+          helpers: newHelpers,
+        },
+      };
+    });
+    
+    toast({
+      title: `${consumable.icon} ${consumable.name} loaded`,
+      description: "Ready to deploy in the junkyard.",
+    });
+  }, [gameState]);
+
+  // Unload a consumable from the launcher back to stash
+  const unloadConsumable = useCallback((consumableIndex: number) => {
+    if (!gameState) return;
+    
+    const primary = gameState.player.helpers.find(h => h.isPrimary);
+    if (!primary) return;
+    
+    const consumable = primary.components.loadedConsumables[consumableIndex];
+    if (!consumable) return;
+    
+    setGameState(prev => {
+      if (!prev) return prev;
+      
+      const newHelpers = prev.player.helpers.map(helper => {
+        if (!helper.isPrimary) return helper;
+        
+        const newLoadedConsumables = [...helper.components.loadedConsumables];
+        newLoadedConsumables.splice(consumableIndex, 1);
+        
+        return {
+          ...helper,
+          components: {
+            ...helper.components,
+            loadedConsumables: newLoadedConsumables,
+          },
+        };
+      });
+      
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          stash: [...prev.player.stash, consumable],
+          helpers: newHelpers,
+        },
+      };
+    });
+  }, [gameState]);
+
+  // Get loaded consumables and launcher capacity for primary helper
+  const getLoadedConsumables = useCallback(() => {
+    if (!gameState) return { consumables: [], capacity: 0 };
+    
+    const primary = gameState.player.helpers.find(h => h.isPrimary);
+    if (!primary) return { consumables: [], capacity: 0 };
+    
+    const launcher = primary.components.launcher;
+    const capacity = launcher?.launcherCapacity || 0;
+    const consumables = primary.components.loadedConsumables || [];
+    
+    return { consumables, capacity };
+  }, [gameState]);
+
   return {
     gameState,
     isLoading,
@@ -2577,5 +2736,10 @@ export function useGameState() {
     craftCleaningBot,
     toggleCleaningBot,
     updateCleaningBotPriorities,
+    // Consumables
+    fireConsumable,
+    loadConsumable,
+    unloadConsumable,
+    getLoadedConsumables,
   };
 }

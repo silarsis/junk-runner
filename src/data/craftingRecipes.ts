@@ -22,6 +22,8 @@ export interface CraftingRecipe {
     movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
     solarRegenRate?: number;
     pileRevealCount?: number;
+    launcherCapacity?: number;
+    consumableType?: string;
   };
 }
 
@@ -453,6 +455,194 @@ export const MODULE_RECIPES: CraftingRecipe[] = [
   },
 ];
 
+// Launcher module recipes
+export const LAUNCHER_RECIPES: CraftingRecipe[] = [
+  {
+    id: 'launcher_compact',
+    name: 'Compact Launcher',
+    category: 'launcher' as any,
+    icon: '🔫',
+    description: 'Upgraded launcher. Holds 2 consumables.',
+    ingredients: [
+      { name: 'Steel Plate', quantity: 2 },
+      { name: 'Broken Gear', quantity: 3 },
+      { name: 'Copper Wire', quantity: 2 },
+    ],
+    currencyCost: 80,
+    output: { launcherCapacity: 2 },
+  },
+  {
+    id: 'launcher_tactical',
+    name: 'Tactical Launcher',
+    category: 'launcher' as any,
+    icon: '🚀',
+    description: 'Military-grade launcher. Holds 4 consumables.',
+    ingredients: [
+      { name: 'Titanium Scrap', quantity: 2 },
+      { name: 'Circuit Board', quantity: 2 },
+      { name: 'Motor Unit', quantity: 1 },
+    ],
+    currencyCost: 200,
+    output: { launcherCapacity: 4 },
+  },
+  {
+    id: 'launcher_heavy',
+    name: 'Heavy Launcher',
+    category: 'launcher' as any,
+    icon: '💣',
+    description: 'Maximum capacity launcher. Holds 6 consumables.',
+    ingredients: [
+      { name: 'Quantum Chip', quantity: 1 },
+      { name: 'Titanium Scrap', quantity: 3 },
+      { name: 'Motor Unit', quantity: 2 },
+    ],
+    currencyCost: 400,
+    output: { launcherCapacity: 6 },
+  },
+];
+
+// Consumable counter recipes
+export const CONSUMABLE_RECIPES: CraftingRecipe[] = [
+  {
+    id: 'consumable_emp_grenade',
+    name: 'EMP Grenade',
+    category: 'consumable' as any,
+    icon: '⚡',
+    description: 'Disables electronic enemies for 3 turns.',
+    ingredients: [
+      { name: 'Circuit Board', quantity: 1 },
+      { name: 'Power Cell', quantity: 1 },
+      { name: 'Copper Wire', quantity: 2 },
+    ],
+    currencyCost: 40,
+    output: { consumableType: 'emp_grenade' },
+  },
+  {
+    id: 'consumable_bait_canister',
+    name: 'Bait Canister',
+    category: 'consumable' as any,
+    icon: '🥩',
+    description: 'Lures organic enemies away for 5 turns.',
+    ingredients: [
+      { name: 'Crushed Can', quantity: 3 },
+      { name: 'Rusty Bolt', quantity: 2 },
+    ],
+    currencyCost: 25,
+    output: { consumableType: 'bait_canister' },
+  },
+  {
+    id: 'consumable_cryo_spray',
+    name: 'Cryo Spray',
+    category: 'consumable' as any,
+    icon: '❄️',
+    description: 'Freezes target in place for 4 turns.',
+    ingredients: [
+      { name: 'Power Cell', quantity: 1 },
+      { name: 'Steel Plate', quantity: 1 },
+      { name: 'Copper Wire', quantity: 2 },
+    ],
+    currencyCost: 50,
+    output: { consumableType: 'cryo_spray' },
+  },
+  {
+    id: 'consumable_sonic_pulse',
+    name: 'Sonic Pulse',
+    category: 'consumable' as any,
+    icon: '🔊',
+    description: 'Scatters swarm enemies in the area.',
+    ingredients: [
+      { name: 'Circuit Board', quantity: 1 },
+      { name: 'Broken Gear', quantity: 2 },
+      { name: 'Metal Shard', quantity: 2 },
+    ],
+    currencyCost: 35,
+    output: { consumableType: 'sonic_pulse' },
+  },
+  {
+    id: 'consumable_thermal_cloak',
+    name: 'Thermal Cloak',
+    category: 'consumable' as any,
+    icon: '🌡️',
+    description: 'Invisible to chasers for 4 turns.',
+    ingredients: [
+      { name: 'Titanium Scrap', quantity: 1 },
+      { name: 'Circuit Board', quantity: 1 },
+      { name: 'Copper Wire', quantity: 3 },
+    ],
+    currencyCost: 60,
+    output: { consumableType: 'thermal_cloak' },
+  },
+  {
+    id: 'consumable_data_spike',
+    name: 'Data Spike',
+    category: 'consumable' as any,
+    icon: '💾',
+    description: 'Corrupts digital enemies, causing malfunction.',
+    ingredients: [
+      { name: 'Quantum Chip', quantity: 1 },
+      { name: 'Circuit Board', quantity: 1 },
+    ],
+    currencyCost: 80,
+    output: { consumableType: 'data_spike' },
+  },
+  {
+    id: 'consumable_degausser',
+    name: 'Degausser',
+    category: 'consumable' as any,
+    icon: '🧲',
+    description: 'Disrupts magnetic enemies for 5 turns.',
+    ingredients: [
+      { name: 'Power Cell', quantity: 1 },
+      { name: 'Motor Unit', quantity: 1 },
+      { name: 'Copper Wire', quantity: 2 },
+    ],
+    currencyCost: 55,
+    output: { consumableType: 'degausser' },
+  },
+  {
+    id: 'consumable_neutralizer_foam',
+    name: 'Neutralizer Foam',
+    category: 'consumable' as any,
+    icon: '🫧',
+    description: 'Clears bio-contamination in area.',
+    ingredients: [
+      { name: 'Steel Plate', quantity: 1 },
+      { name: 'Crushed Can', quantity: 4 },
+      { name: 'Rusty Bolt', quantity: 3 },
+    ],
+    currencyCost: 30,
+    output: { consumableType: 'neutralizer_foam' },
+  },
+  {
+    id: 'consumable_flash_flare',
+    name: 'Flash Flare',
+    category: 'consumable' as any,
+    icon: '💥',
+    description: 'Blinds enemies in radius for 3 turns.',
+    ingredients: [
+      { name: 'Power Cell', quantity: 1 },
+      { name: 'Metal Shard', quantity: 3 },
+      { name: 'Copper Wire', quantity: 1 },
+    ],
+    currencyCost: 35,
+    output: { consumableType: 'flash_flare' },
+  },
+  {
+    id: 'consumable_holographic_decoy',
+    name: 'Holographic Decoy',
+    category: 'consumable' as any,
+    icon: '👤',
+    description: 'Creates distraction for 6 turns.',
+    ingredients: [
+      { name: 'Circuit Board', quantity: 2 },
+      { name: 'Quantum Chip', quantity: 1 },
+      { name: 'Power Cell', quantity: 1 },
+    ],
+    currencyCost: 100,
+    output: { consumableType: 'holographic_decoy' },
+  },
+];
+
 // Combined recipes for easy access
 export const ALL_RECIPES = {
   frame: FRAME_RECIPES,
@@ -460,6 +650,8 @@ export const ALL_RECIPES = {
   storage: STORAGE_RECIPES,
   mobility: MOBILITY_RECIPES,
   module: MODULE_RECIPES,
+  launcher: LAUNCHER_RECIPES,
+  consumable: CONSUMABLE_RECIPES,
 };
 
 // Helper to check if player has required ingredients

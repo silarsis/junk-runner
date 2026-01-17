@@ -82,7 +82,7 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Basic Frame',
     slots: {
       mobilitySlots: 1,
-      moduleSlots: 1,
+      moduleSlots: 2, // +1 for launcher
       batterySlots: 1,
     },
     icon: '🤖',
@@ -94,7 +94,7 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Crawler Frame',
     slots: {
       mobilitySlots: 1,
-      moduleSlots: 2,
+      moduleSlots: 3, // +1 for launcher
       batterySlots: 1,
     },
     icon: '🐛',
@@ -106,7 +106,7 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Scout Frame',
     slots: {
       mobilitySlots: 1,
-      moduleSlots: 3,
+      moduleSlots: 4, // +1 for launcher
       batterySlots: 2,
     },
     icon: '🔭',
@@ -118,7 +118,7 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Hauler Frame',
     slots: {
       mobilitySlots: 1,
-      moduleSlots: 4,
+      moduleSlots: 5, // +1 for launcher
       batterySlots: 1,
     },
     icon: '🚛',
@@ -130,7 +130,7 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Explorer Frame',
     slots: {
       mobilitySlots: 2,
-      moduleSlots: 3,
+      moduleSlots: 4, // +1 for launcher
       batterySlots: 2,
     },
     icon: '🧭',
@@ -142,7 +142,7 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Titan Frame',
     slots: {
       mobilitySlots: 2,
-      moduleSlots: 5,
+      moduleSlots: 6, // +1 for launcher
       batterySlots: 3,
     },
     icon: '🦾',

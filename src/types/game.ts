@@ -1,6 +1,6 @@
 export type Rarity = 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary';
 
-export type ItemCategory = 'scrap' | 'component' | 'module' | 'junk' | 'battery' | 'mobility' | 'storage';
+export type ItemCategory = 'scrap' | 'component' | 'module' | 'junk' | 'battery' | 'mobility' | 'storage' | 'consumable' | 'launcher';
 
 export type ModifierType = 'carry_bonus' | 'reveal_bonus' | 'cleaning_speed' | 'sell_bonus' | 'battery_capacity';
 
@@ -35,6 +35,10 @@ export interface Item {
   solarRegenRate?: number; // Turns per 1 charge regen
   // Pile scanner specific
   pileRevealCount?: number; // How many items to reveal in junk piles
+  // Launcher-specific
+  launcherCapacity?: number; // How many consumables it can hold
+  // Consumable-specific
+  consumableType?: string; // Type of consumable (e.g., 'emp_grenade')
 }
 
 export interface InventoryItem extends Item {
@@ -195,6 +199,8 @@ export interface HelperComponents {
   mobility: Item | null;  // Mobility module (treads, wheels, legs)
   modules: Item[];        // General modules (storage, scanner, etc.)
   battery: Item | null;   // Power source
+  launcher: Item | null;  // Launcher module for consumables
+  loadedConsumables: Item[]; // Consumables loaded in launcher
 }
 
 export interface HelperRobot {
