@@ -11,7 +11,8 @@ export type ConsumableType =
   | 'degausser'
   | 'neutralizer_foam'
   | 'flash_flare'
-  | 'holographic_decoy';
+  | 'holographic_decoy'
+  | 'recall_beacon';
 
 export interface ConsumableDefinition {
   id: ConsumableType;
@@ -102,6 +103,14 @@ export const CONSUMABLE_DEFINITIONS: ConsumableDefinition[] = [
     description: 'Projects a fake target that draws enemy attention',
     effect: 'Creates distraction for 6 turns',
     countersEnemies: ['meltdown_husk', 'linebreaker', 'archive_keeper', 'press_warden'],
+  },
+  {
+    id: 'recall_beacon',
+    name: 'Recall Beacon',
+    icon: '📡',
+    description: 'Emergency teleporter that returns you to base instantly',
+    effect: 'Teleport to base without losing junkyard progress',
+    countersEnemies: [], // Not an enemy counter - utility item
   },
 ];
 
