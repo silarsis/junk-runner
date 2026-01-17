@@ -171,7 +171,7 @@ const Index = () => {
 
   return (
     <div className="min-h-screen bg-background">
-      <AnimatePresence mode="wait">
+      <AnimatePresence mode="sync" initial={false}>
         {currentScreen === 'base' && (
           <BaseScreen
             key="base"
