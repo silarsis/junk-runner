@@ -59,8 +59,27 @@ const Index = () => {
     toggleCleaningBot,
     updateCleaningBotPriorities,
     fireConsumable,
+    loadConsumable,
+    unloadConsumable,
     getLoadedConsumables,
   } = useGameState();
+
+  // Get launcher info for loadout
+  const getLauncherInfo = () => {
+    if (!gameState) return { name: 'Launcher', icon: '🎯' };
+    const primary = gameState.player.helpers.find(h => h.isPrimary);
+    if (!primary?.components.launcher) return { name: 'No Launcher', icon: '❌' };
+    return {
+      name: primary.components.launcher.name,
+      icon: primary.components.launcher.icon,
+    };
+  };
+
+  // Get consumables from stash
+  const getStashConsumables = () => {
+    if (!gameState) return [];
+    return gameState.player.stash.filter(item => item.category === 'consumable');
+  };
 
   // Show terrain toast when stepping on terrain
   useEffect(() => {
@@ -181,6 +200,13 @@ const Index = () => {
             onEnterJunkyard={handleEnterJunkyard}
             onAbandonJunkyard={handleMoveToNextJunkyard}
             onClose={() => setCurrentScreen('base')}
+            loadedConsumables={getLoadedConsumables().consumables}
+            launcherCapacity={getLoadedConsumables().capacity}
+            stashConsumables={getStashConsumables()}
+            onLoadConsumable={loadConsumable}
+            onUnloadConsumable={unloadConsumable}
+            launcherName={getLauncherInfo().name}
+            launcherIcon={getLauncherInfo().icon}
           />
         )}
 
