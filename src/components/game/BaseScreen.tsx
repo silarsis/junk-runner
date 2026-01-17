@@ -53,8 +53,11 @@ export function BaseScreen({
   // Get primary helper info
   const primaryHelper = player.helpers.find(h => h.isPrimary);
   const helperBattery = primaryHelper?.components.battery;
-  const helperStorage = primaryHelper?.components.modules.find(m => m?.category === 'storage');
+  const helperModules = primaryHelper?.components.modules || [];
   const helperMobility = primaryHelper?.components.mobility;
+  
+  // For backward compat in slot description
+  const helperStorage = helperModules.find(m => m?.category === 'storage');
   
   // Calculate charging cost
   const chargeNeeded = maxBattery - player.currentCharge;
@@ -198,38 +201,61 @@ export function BaseScreen({
             </div>
           </div>
           
-          <div className="grid grid-cols-3 gap-2 text-xs">
-            {/* Mobility */}
-            <motion.button
-              className="p-2 rounded bg-muted/30 text-center hover:bg-muted/50 transition-colors cursor-pointer"
-              onClick={() => handleSlotClick('mobility', helperMobility || null)}
-              whileTap={{ scale: 0.95 }}
-            >
-              <span className="text-lg">{helperMobility?.icon || '⛓️'}</span>
-              <p className="text-muted-foreground mt-1">{helperMobility?.name || 'Tank Treads'}</p>
-            </motion.button>
+          <div className="space-y-2">
+            {/* Top row: Mobility + Battery */}
+            <div className="grid grid-cols-2 gap-2 text-xs">
+              {/* Mobility */}
+              <motion.button
+                className="p-2 rounded bg-muted/30 text-center hover:bg-muted/50 transition-colors cursor-pointer"
+                onClick={() => handleSlotClick('mobility', helperMobility || null)}
+                whileTap={{ scale: 0.95 }}
+              >
+                <span className="text-lg">{helperMobility?.icon || '⛓️'}</span>
+                <p className="text-muted-foreground mt-1">{helperMobility?.name || 'Tank Treads'}</p>
+              </motion.button>
+              
+              {/* Battery */}
+              <motion.button
+                className="p-2 rounded bg-muted/30 text-center hover:bg-muted/50 transition-colors cursor-pointer"
+                onClick={() => handleSlotClick('battery', helperBattery || null)}
+                whileTap={{ scale: 0.95 }}
+              >
+                <span className="text-lg">{helperBattery?.icon || '🔋'}</span>
+                <p className="text-muted-foreground mt-1">{maxBattery} moves</p>
+              </motion.button>
+            </div>
             
-            {/* Storage (first module slot) */}
-            <motion.button
-              className="p-2 rounded bg-muted/30 text-center hover:bg-muted/50 transition-colors cursor-pointer"
-              onClick={() => handleSlotClick('module', helperStorage || null, 0)}
-              whileTap={{ scale: 0.95 }}
-            >
-              <span className="text-lg">{helperStorage?.icon || '📦'}</span>
-              <p className="text-muted-foreground mt-1">
-                {helperStorage ? `${helperStorage.storageWidth}x${helperStorage.storageHeight}` : '4x4'}
-              </p>
-            </motion.button>
-            
-            {/* Battery */}
-            <motion.button
-              className="p-2 rounded bg-muted/30 text-center hover:bg-muted/50 transition-colors cursor-pointer"
-              onClick={() => handleSlotClick('battery', helperBattery || null)}
-              whileTap={{ scale: 0.95 }}
-            >
-              <span className="text-lg">{helperBattery?.icon || '🔋'}</span>
-              <p className="text-muted-foreground mt-1">{maxBattery} moves</p>
-            </motion.button>
+            {/* Modules row - shows all equipped modules */}
+            <div className="text-xs">
+              <p className="text-muted-foreground text-[10px] mb-1">Modules ({helperModules.length}/2)</p>
+              <div className="grid grid-cols-2 gap-2">
+                {helperModules.map((module, idx) => (
+                  <motion.button
+                    key={idx}
+                    className="p-2 rounded bg-muted/30 text-center hover:bg-muted/50 transition-colors cursor-pointer"
+                    onClick={() => handleSlotClick('module', module, idx)}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <span className="text-lg">{module?.icon || '📦'}</span>
+                    <p className="text-muted-foreground mt-1 truncate text-[10px]">
+                      {module?.category === 'storage' 
+                        ? `${module.storageWidth}x${module.storageHeight} storage`
+                        : module?.name || 'Empty'}
+                    </p>
+                  </motion.button>
+                ))}
+                {helperModules.length < 2 && (
+                  <motion.button
+                    className="p-2 rounded bg-muted/20 text-center hover:bg-muted/30 transition-colors cursor-pointer border border-dashed border-muted-foreground/30"
+                    onClick={() => handleSlotClick('module', null, helperModules.length)}
+                    whileTap={{ scale: 0.95 }}
+                  >
+                    <Plus className="w-4 h-4 mx-auto text-muted-foreground" />
+                    <p className="text-muted-foreground mt-1 text-[10px]">Add Module</p>
+                  </motion.button>
+                )}
+              </div>
+            </div>
           </div>
           
           {/* Charge Bar */}
