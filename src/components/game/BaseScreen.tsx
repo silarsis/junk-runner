@@ -57,7 +57,13 @@ export function BaseScreen({
   const needsCharge = chargeNeeded > 0;
 
   return (
-    <div className="min-h-screen bg-background flex flex-col">
+    <motion.div 
+      className="min-h-screen bg-background flex flex-col"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: 0.2 }}
+    >
       {/* Header */}
       <header className="industrial-panel p-4 flex items-center justify-between">
         <h1 className="text-xl font-industrial text-primary tracking-wider">
@@ -346,6 +352,6 @@ export function BaseScreen({
           </Button>
         </motion.div>
       </main>
-    </div>
+    </motion.div>
   );
 }
