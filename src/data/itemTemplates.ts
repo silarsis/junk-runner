@@ -51,10 +51,6 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Racing Wheels', category: 'mobility', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 3, baseValue: 160, icon: '🏎️', movementType: 'extended' },
   { name: 'All-Terrain Treads', category: 'mobility', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 6, baseValue: 140, icon: '⛓️', movementType: 'basic' },
   { name: 'Spider Legs', category: 'mobility', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 5, baseValue: 280, icon: '🕷️', movementType: 'diagonal' },
-  { name: 'Jump Jets', category: 'mobility', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 3, baseValue: 450, icon: '🚀', movementType: 'jump' },
-  
-  // General Modules
-  { name: 'Cleaning Assist', category: 'module', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 120, icon: '🧹' },
   
   // Pile Scanners - reveal items in junk piles before scavenging
   { name: 'Basic Pile Scanner', category: 'module', rarity: 'uncommon', sizeW: 1, sizeH: 1, weight: 1, baseValue: 80, icon: '🔍', pileRevealCount: 1 },

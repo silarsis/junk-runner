@@ -324,21 +324,8 @@ export const AUTOMATION_RECIPES: CraftingRecipe[] = [
   },
 ];
 
-// General module recipes (scanner, cleaning assist, solar panels, pile scanners)
+// General module recipes (solar panels, pile scanners)
 export const MODULE_RECIPES: CraftingRecipe[] = [
-  {
-    id: 'module_cleaning',
-    name: 'Cleaning Assist',
-    category: 'module',
-    icon: '🧹',
-    description: 'Speeds up cleaning by 20%.',
-    ingredients: [
-      { name: 'Broken Gear', quantity: 3 },
-      { name: 'Circuit Board', quantity: 1 },
-      { name: 'Copper Wire', quantity: 2 },
-    ],
-    currencyCost: 60,
-  },
   // Pile Scanner modules - reveal items in junk piles before scavenging
   {
     id: 'module_pile_scanner_basic',
