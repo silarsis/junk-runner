@@ -198,6 +198,8 @@ const Index = () => {
             biome={biome}
             seed={junkyardSeed}
             hasActiveJunkyard={gameState.infiniteJunkyard !== null}
+            currentBattery={gameState.player.currentCharge}
+            maxBattery={maxBattery}
             onEnterJunkyard={handleEnterJunkyard}
             onAbandonJunkyard={handleMoveToNextJunkyard}
             onClose={() => setCurrentScreen('base')}

@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Map, Trash2, Target } from 'lucide-react';
+import { X, Map, Trash2, Target, Battery } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { JunkyardPreview } from './JunkyardPreview';
 import { LoadoutModal } from './LoadoutModal';
@@ -11,6 +11,8 @@ interface ScavengeScreenProps {
   biome: Biome;
   seed: number;
   hasActiveJunkyard: boolean;
+  currentBattery: number;
+  maxBattery: number;
   onEnterJunkyard: () => void;
   onAbandonJunkyard: () => void;
   onClose: () => void;
@@ -28,6 +30,8 @@ export function ScavengeScreen({
   biome,
   seed,
   hasActiveJunkyard,
+  currentBattery,
+  maxBattery,
   onEnterJunkyard,
   onAbandonJunkyard,
   onClose,
@@ -98,7 +102,13 @@ export function ScavengeScreen({
             onClick={onEnterJunkyard}
           >
             <Map className="w-6 h-6" />
-            {hasActiveJunkyard ? 'Continue Scavenging' : 'Enter Junkyard'}
+            <span className="flex flex-col items-start">
+              <span>{hasActiveJunkyard ? 'Continue Scavenging' : 'Enter Junkyard'}</span>
+              <span className="text-xs opacity-80 flex items-center gap-1">
+                <Battery className="w-3 h-3" />
+                {currentBattery}/{maxBattery} charge
+              </span>
+            </span>
           </Button>
           {hasActiveJunkyard && (
             <p className="text-xs text-muted-foreground text-center mt-2">
