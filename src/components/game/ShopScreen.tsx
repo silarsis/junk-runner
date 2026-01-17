@@ -1,4 +1,4 @@
-import { motion } from 'framer-motion';
+import { forwardRef } from 'react'; import { motion } from 'framer-motion';
 import { X, Coins, Trash2, ShoppingCart, Tag } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
@@ -38,7 +38,7 @@ function formatTimeRemaining(ms: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
-export function ShopScreen({ 
+export const ShopScreen = forwardRef<HTMLDivElement, ShopScreenProps>(function ShopScreen({ 
   stash, 
   currency,
   shopInventory, 
@@ -46,8 +46,8 @@ export function ShopScreen({
   onSell, 
   onSellMultiple, 
   onBuy,
-  onClose 
-}: ShopScreenProps) {
+  onClose,
+}: ShopScreenProps, ref) {
   const getRarityClass = (rarity: string) => {
     switch (rarity) {
       case 'uncommon': return 'rarity-uncommon';
@@ -83,7 +83,7 @@ export function ShopScreen({
   const timeUntilRefresh = Math.max(0, shopRefreshTime - Date.now());
 
   return (
-    <motion.div
+    <motion.div ref={ref}
       className="fixed inset-0 z-50 bg-background flex flex-col"
       initial={{ opacity: 0, x: '100%' }}
       animate={{ opacity: 1, x: 0 }}
@@ -260,4 +260,4 @@ export function ShopScreen({
       </Tabs>
     </motion.div>
   );
-}
+});
