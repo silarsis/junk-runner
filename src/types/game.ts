@@ -218,6 +218,7 @@ export interface BaseUpgrades {
   controlCapacity: number;
   chargerEfficiency: number; // reduces cost per charge unit
   baseRechargeRate: number; // passive recharge at base (seconds per 1 charge)
+  shopPrices: number; // multiplier for shop sell prices (1.0, 1.1, 1.25, 1.5)
 }
 
 // Cleaning bot priority settings

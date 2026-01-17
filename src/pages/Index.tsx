@@ -14,6 +14,7 @@ import { ScavengeScreen } from '@/components/game/ScavengeScreen';
 import { FoundItemsAlert } from '@/components/game/FoundItemsAlert';
 import { showTerrainToast } from '@/components/game/TerrainToast';
 import { getBiomeFromSeed } from '@/data/biomes';
+import { UPGRADES } from '@/data/upgradeData';
 import { TerminalIntroScreen } from '@/components/game/TerminalIntroScreen';
 
 const INTRO_SEEN_KEY = 'junkrunner_intro_seen';
@@ -254,6 +255,7 @@ const Index = () => {
             currency={gameState.player.currency}
             shopInventory={shopInventory}
             shopRefreshTime={shopRefreshTime}
+            shopPriceMultiplier={UPGRADES.shopPrices.getValue(gameState.player.baseUpgrades.shopPrices)}
             onSell={sellItem}
             onSellMultiple={sellMultipleItems}
             onBuy={buyShopItem}

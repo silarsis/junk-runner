@@ -15,20 +15,21 @@ interface ShopScreenProps {
   currency: number;
   shopInventory: ShopItem[];
   shopRefreshTime: number;
+  shopPriceMultiplier?: number;
   onSell: (itemId: string) => void;
   onSellMultiple?: (itemIds: string[]) => void;
   onBuy: (itemId: string) => void;
   onClose: () => void;
 }
 
-function calculateSellPrice(item: Item): number {
+function calculateSellPrice(item: Item, priceMultiplier: number = 1): number {
   const rarityMult: Record<Rarity, number> = {
     common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
   };
   const conditionMult = item.condition / 100;
   const dirtyMult = item.isDirty ? 0.3 : 1;
   
-  return Math.max(1, Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult));
+  return Math.max(1, Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult * priceMultiplier));
 }
 
 function formatTimeRemaining(ms: number): string {
@@ -43,6 +44,7 @@ export const ShopScreen = forwardRef<HTMLDivElement, ShopScreenProps>(function S
   currency,
   shopInventory, 
   shopRefreshTime,
+  shopPriceMultiplier = 1,
   onSell, 
   onSellMultiple, 
   onBuy,
@@ -68,9 +70,9 @@ export const ShopScreen = forwardRef<HTMLDivElement, ShopScreenProps>(function S
     }
   };
 
-  const totalValue = stash.reduce((sum, item) => sum + calculateSellPrice(item), 0);
+  const totalValue = stash.reduce((sum, item) => sum + calculateSellPrice(item, shopPriceMultiplier), 0);
   const junkItems = stash.filter(item => item.category === 'junk');
-  const junkValue = junkItems.reduce((sum, item) => sum + calculateSellPrice(item), 0);
+  const junkValue = junkItems.reduce((sum, item) => sum + calculateSellPrice(item, shopPriceMultiplier), 0);
 
   const handleSellAllJunk = () => {
     if (onSellMultiple) {
@@ -149,7 +151,7 @@ export const ShopScreen = forwardRef<HTMLDivElement, ShopScreenProps>(function S
             
             <div className="space-y-2">
               {stash.map(item => {
-                const price = calculateSellPrice(item);
+                const price = calculateSellPrice(item, shopPriceMultiplier);
                 
                 return (
                   <motion.div
