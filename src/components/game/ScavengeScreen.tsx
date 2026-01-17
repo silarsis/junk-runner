@@ -1,8 +1,11 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { X, Map, Trash2 } from 'lucide-react';
+import { X, Map, Trash2, Target } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { JunkyardPreview } from './JunkyardPreview';
+import { LoadoutModal } from './LoadoutModal';
 import { Biome } from '@/data/biomes';
+import { Item } from '@/types/game';
 
 interface ScavengeScreenProps {
   biome: Biome;
@@ -11,6 +14,14 @@ interface ScavengeScreenProps {
   onEnterJunkyard: () => void;
   onAbandonJunkyard: () => void;
   onClose: () => void;
+  // Loadout props
+  loadedConsumables: Item[];
+  launcherCapacity: number;
+  stashConsumables: Item[];
+  onLoadConsumable: (consumableId: string) => void;
+  onUnloadConsumable: (index: number) => void;
+  launcherName?: string;
+  launcherIcon?: string;
 }
 
 export function ScavengeScreen({
@@ -20,7 +31,16 @@ export function ScavengeScreen({
   onEnterJunkyard,
   onAbandonJunkyard,
   onClose,
+  loadedConsumables,
+  launcherCapacity,
+  stashConsumables,
+  onLoadConsumable,
+  onUnloadConsumable,
+  launcherName,
+  launcherIcon,
 }: ScavengeScreenProps) {
+  const [showLoadout, setShowLoadout] = useState(false);
+
   return (
     <motion.div
       className="fixed inset-0 z-50 bg-background flex flex-col"
@@ -44,6 +64,25 @@ export function ScavengeScreen({
           transition={{ delay: 0.1 }}
         >
           <JunkyardPreview biome={biome} seed={seed} />
+        </motion.div>
+
+        {/* Loadout Button */}
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.15 }}
+        >
+          <Button
+            variant="secondary"
+            className="w-full"
+            onClick={() => setShowLoadout(true)}
+          >
+            <Target className="w-4 h-4" />
+            Loadout ({loadedConsumables.length}/{launcherCapacity})
+          </Button>
+          <p className="text-xs text-muted-foreground text-center mt-1">
+            Equip consumables before entering
+          </p>
         </motion.div>
 
         {/* Main Action - Enter Junkyard */}
@@ -90,6 +129,19 @@ export function ScavengeScreen({
           </p>
         </motion.div>
       </main>
+
+      {/* Loadout Modal */}
+      <LoadoutModal
+        isOpen={showLoadout}
+        onClose={() => setShowLoadout(false)}
+        loadedConsumables={loadedConsumables}
+        launcherCapacity={launcherCapacity}
+        stashConsumables={stashConsumables}
+        onLoadConsumable={onLoadConsumable}
+        onUnloadConsumable={onUnloadConsumable}
+        launcherName={launcherName}
+        launcherIcon={launcherIcon}
+      />
     </motion.div>
   );
 }
