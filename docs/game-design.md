@@ -21,16 +21,29 @@ Junk Runner is a single-player, browser-based scavenging roguelite. Players pilo
 - Junkyards are procedurally generated with biome-specific terrain, barriers, walls, and loot piles.
 - World generation is chunk-based for infinite exploration. Difficulty and rarity scale with distance from the entrance.
 - Terrain hazards apply movement penalties, battery drain, and/or component damage (e.g., magnetic floors increase item weight, toxic hazards degrade mobility).
+- Piles require multiple turns to search; deeper chunks yield higher rarity loot.
 
 ### Resources & Constraints
 - **Battery Charge**: Movement and hazards drain charge; base recharging restores it over time.
 - **Inventory Space & Weight**: Items must fit into a grid-based bag and respect weight limits.
 - **Item Condition**: Loot can be dirty or damaged; cleaning restores value and usability.
 
+### Biomes
+- **Nuclear Exclusion Heap**: Reactor debris, radiation hazards, high battery/component loot.
+- **Neon Slum Electronics Yard**: Cable sprawl, electronics scrap, increased module/component density.
+- **Industrial Corpse Zone**: Heavy machinery, oil hazards, mobility/storage parts.
+- **Black Market Bio-Waste Fields**: Organic hazards, contamination risks, bio-themed drops.
+- **Cloudfall Data Graveyard**: Server racks, magnetic floors, data-centric loot.
+
 ### Enemies & Threats
 - Enemies are biome-themed with behaviors like wandering, patrolling, chasing, and ambushing.
 - Adjacency effects include battery drain, movement penalties, or disabling helpers.
 - Consumables counter enemy archetypes (EMP, cryo, decoys, etc.) and provide tactical tools like recall beacons.
+
+### Items & Rarity
+- Loot is categorized (scrap, component, module, battery, mobility, storage, consumable, launcher).
+- Rarity tiers drive value and power: common → legendary.
+- Items can include special stats (storage size, battery capacity, movement type, pile reveal count).
 
 ### Economy
 - Currency is earned by selling items. The shop sells items and components on a timed refresh cycle.
@@ -43,6 +56,12 @@ Junk Runner is a single-player, browser-based scavenging roguelite. Players pilo
 ### Automation
 - The cleaning bot automates cleaning tasks by queuing and collecting items when active.
 - Automation reduces manual micromanagement, turning the base into a higher-throughput operation.
+
+## Player Actions & Inputs
+- **Move**: Navigate grid-based junkyard tiles, constrained by battery and hazards.
+- **Search**: Spend turns to scavenge piles, revealing or collecting loot.
+- **Loadouts**: Equip helper frames, mobility, storage, batteries, and launchers.
+- **Consumables**: Load launcher slots and fire to counter enemy threats or exit via recall.
 
 ## Content Pillars
 - **Biomes**: Unique junkyard themes (e.g., Nuclear Exclusion Heap, Neon Slum, Industrial Corpse Zone) with distinct hazards and loot profiles.
@@ -59,4 +78,3 @@ Junk Runner is a single-player, browser-based scavenging roguelite. Players pilo
 - Biome barriers already declare required modules, enabling future gating mechanics.
 - Terrain effects and enemy adjacency effects can be expanded for deeper tactical play.
 - Additional helper frames, modules, and automation bots can extend progression without altering the core loop.
-
