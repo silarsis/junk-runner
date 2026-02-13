@@ -59,7 +59,7 @@ import {
   CHUNK_WIDTH,
   CHUNK_HEIGHT,
 } from '@/lib/chunkGenerator';
-import { processEnemyTurns, getAdjacentEnemies, applyStatusEffectToEnemies } from '@/lib/enemyAI';
+import { processEnemyTurns, getAdjacentEnemies, applyStatusEffectToEnemies, scareGlowRats } from '@/lib/enemyAI';
 import { getEnemyDefinition, Enemy, EnemyStatusEffect, EnemyStatus } from '@/types/enemies';
 import { getConsumableDefinition, ConsumableType, CONSUMABLE_DEFINITIONS } from '@/data/consumableData';
 import { 
@@ -1257,6 +1257,22 @@ export function useGameState() {
       let enemyEncounter: Enemy | null = null;
       
       if (currentChunk && currentChunk.enemies && currentChunk.enemies.length > 0) {
+        // Scare away glow rats the player stepped on
+        const scaredEnemies = scareGlowRats(currentChunk.enemies, playerLocalX, playerLocalY, {
+          yardId: updatedJunkyard.yardId,
+          seed: currentChunk.seed,
+          biomeId: updatedJunkyard.biomeId,
+          width: CHUNK_WIDTH,
+          height: CHUNK_HEIGHT,
+          revealedTiles: currentChunk.revealedTiles,
+          piles: currentChunk.piles,
+          walls: currentChunk.walls,
+          terrain: currentChunk.terrain,
+          barriers: currentChunk.barriers,
+          droppedItems: currentChunk.droppedItems,
+          enemies: currentChunk.enemies,
+        });
+        
         // Create a temporary legacy junkyard structure for enemy AI
         const tempJunkyard: Junkyard = {
           yardId: updatedJunkyard.yardId,
@@ -1270,17 +1286,17 @@ export function useGameState() {
           terrain: currentChunk.terrain,
           barriers: currentChunk.barriers,
           droppedItems: currentChunk.droppedItems,
-          enemies: currentChunk.enemies,
+          enemies: scaredEnemies,
         };
         
-        const { updatedEnemies, playerCollision } = processEnemyTurns(
+        const { updatedEnemies, playerCollision, updatedPiles } = processEnemyTurns(
           tempJunkyard,
           playerLocalX,
           playerLocalY
         );
         
-        // Update chunk with new enemy positions
-        const updatedChunk = { ...currentChunk, enemies: updatedEnemies };
+        // Update chunk with new enemy positions and eaten piles
+        const updatedChunk = { ...currentChunk, enemies: updatedEnemies, piles: updatedPiles };
         updatedJunkyard = setChunkSafe(updatedJunkyard, makeChunkKey(chunkX, chunkY), updatedChunk);
         
         enemyEncounter = playerCollision;
@@ -1516,8 +1532,9 @@ export function useGameState() {
             enemies: updatedChunk.enemies,
           };
           
-          const { updatedEnemies } = processEnemyTurns(tempJunkyard, localX, localY);
+          const { updatedEnemies, updatedPiles } = processEnemyTurns(tempJunkyard, localX, localY);
           updatedChunk.enemies = updatedEnemies;
+          updatedChunk.piles = updatedPiles;
           
           // Check for adjacent enemies
           const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
@@ -1590,8 +1607,9 @@ export function useGameState() {
             enemies: updatedChunk.enemies,
           };
           
-          const { updatedEnemies } = processEnemyTurns(tempJunkyard, localX, localY);
+          const { updatedEnemies, updatedPiles: updatedPiles2 } = processEnemyTurns(tempJunkyard, localX, localY);
           updatedChunk.enemies = updatedEnemies;
+          updatedChunk.piles = updatedPiles2;
           
           // Check for adjacent enemies
           const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
@@ -1692,8 +1710,9 @@ export function useGameState() {
           enemies: updatedChunk.enemies,
         };
         
-        const { updatedEnemies, playerCollision } = processEnemyTurns(tempJunkyard, localX, localY);
+        const { updatedEnemies, playerCollision, updatedPiles: waitPiles } = processEnemyTurns(tempJunkyard, localX, localY);
         updatedChunk.enemies = updatedEnemies;
+        updatedChunk.piles = waitPiles;
         
         // Check for adjacent enemies
         const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
