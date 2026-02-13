@@ -1,4 +1,4 @@
-import { Junkyard } from '@/types/game';
+import { Junkyard, JunkPile } from '@/types/game';
 import { Enemy, EnemyStatus, getEnemyDefinition } from '@/types/enemies';
 import { isTilePassable, getEnemyAt } from './terrainGenerator';
 
@@ -102,6 +102,64 @@ function processWander(
     ...enemy,
     x: randomMove.x,
     y: randomMove.y,
+    turnsStationary: 0,
+  };
+}
+
+// Glow Rat behaviour: move toward nearest junk pile (not player-occupied) and eat it
+function processGlowRat(
+  enemy: Enemy,
+  junkyard: Junkyard,
+  enemies: Enemy[],
+  playerX: number,
+  playerY: number
+): Enemy {
+  // Find nearest non-depleted junk pile that player isn't standing on
+  const availablePiles = junkyard.piles.filter(
+    p => !p.isDepleted && !(p.x === playerX && p.y === playerY)
+  );
+  
+  if (availablePiles.length === 0) {
+    // No piles to eat, wander randomly
+    return processWander(enemy, junkyard, enemies, playerX, playerY);
+  }
+  
+  // Find nearest pile
+  let nearestPile = availablePiles[0];
+  let nearestDist = manhattanDistance(enemy.x, enemy.y, nearestPile.x, nearestPile.y);
+  for (const pile of availablePiles) {
+    const dist = manhattanDistance(enemy.x, enemy.y, pile.x, pile.y);
+    if (dist < nearestDist) {
+      nearestDist = dist;
+      nearestPile = pile;
+    }
+  }
+  
+  // If already on the pile, stay and eat (turnsStationary tracks eating progress)
+  if (enemy.x === nearestPile.x && enemy.y === nearestPile.y) {
+    return { ...enemy, turnsStationary: enemy.turnsStationary + 1 };
+  }
+  
+  // Move toward the nearest pile
+  const validMoves = getValidMoves(enemy, junkyard, enemies);
+  if (validMoves.length === 0) {
+    return { ...enemy, turnsStationary: enemy.turnsStationary + 1 };
+  }
+  
+  let bestMove = validMoves[0];
+  let bestDist = manhattanDistance(bestMove.x, bestMove.y, nearestPile.x, nearestPile.y);
+  for (const move of validMoves) {
+    const dist = manhattanDistance(move.x, move.y, nearestPile.x, nearestPile.y);
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestMove = move;
+    }
+  }
+  
+  return {
+    ...enemy,
+    x: bestMove.x,
+    y: bestMove.y,
     turnsStationary: 0,
   };
 }
@@ -322,6 +380,10 @@ function processEnemyTurn(
   
   switch (definition.behaviour) {
     case 'wander':
+      // Glow rats use special junk-seeking behaviour
+      if (definition.id === 'glow_rat') {
+        return processGlowRat(processedEnemy, junkyard, enemies, playerX, playerY);
+      }
       return processWander(processedEnemy, junkyard, enemies, playerX, playerY);
     case 'patrol':
       return processPatrol(processedEnemy, junkyard, enemies, playerX, playerY);
@@ -341,14 +403,17 @@ export function processEnemyTurns(
   junkyard: Junkyard,
   playerX: number,
   playerY: number
-): { updatedEnemies: Enemy[]; playerCollision: Enemy | null } {
+): { updatedEnemies: Enemy[]; playerCollision: Enemy | null; updatedPiles: JunkPile[] } {
   const updatedEnemies: Enemy[] = [];
   let playerCollision: Enemy | null = null;
+  let updatedPiles = [...junkyard.piles];
   
   for (const enemy of junkyard.enemies) {
+    // Use a junkyard with current piles state for AI decisions
+    const currentJunkyard = { ...junkyard, piles: updatedPiles };
     const updatedEnemy = processEnemyTurn(
       enemy,
-      junkyard,
+      currentJunkyard,
       [...updatedEnemies, ...junkyard.enemies.filter(e => !updatedEnemies.find(u => u.id === e.id))],
       playerX,
       playerY
@@ -359,10 +424,59 @@ export function processEnemyTurns(
       playerCollision = updatedEnemy;
     }
     
+    // Glow rats eat junk piles they're sitting on
+    const def = getEnemyDefinition(updatedEnemy.definitionId);
+    if (def?.id === 'glow_rat') {
+      const pileIndex = updatedPiles.findIndex(
+        p => !p.isDepleted && p.x === updatedEnemy.x && p.y === updatedEnemy.y
+      );
+      if (pileIndex >= 0) {
+        const pile = updatedPiles[pileIndex];
+        const newProgress = pile.progressTurns + 1;
+        if (newProgress >= pile.requiredTurns) {
+          // Pile destroyed by glow rats
+          updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress, isDepleted: true };
+        } else {
+          updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress };
+        }
+      }
+    }
+    
     updatedEnemies.push(updatedEnemy);
   }
   
-  return { updatedEnemies, playerCollision };
+  return { updatedEnemies, playerCollision, updatedPiles };
+}
+
+// Scare away glow rats when player steps on their tile
+export function scareGlowRats(
+  enemies: Enemy[],
+  playerX: number,
+  playerY: number,
+  junkyard: Junkyard
+): Enemy[] {
+  return enemies.map(enemy => {
+    if (enemy.x !== playerX || enemy.y !== playerY) return enemy;
+    const def = getEnemyDefinition(enemy.definitionId);
+    if (def?.id !== 'glow_rat') return enemy;
+    
+    // Scatter the glow rat: move it to a random valid adjacent tile away from player
+    const directions = [
+      { dx: 0, dy: -1 }, { dx: 0, dy: 1 },
+      { dx: -1, dy: 0 }, { dx: 1, dy: 0 },
+    ];
+    const validEscapes = directions
+      .map(d => ({ x: enemy.x + d.dx, y: enemy.y + d.dy }))
+      .filter(pos => isTilePassable(junkyard, pos.x, pos.y) && !(pos.x === playerX && pos.y === playerY));
+    
+    if (validEscapes.length > 0) {
+      const escape = validEscapes[Math.floor(Math.random() * validEscapes.length)];
+      return { ...enemy, x: escape.x, y: escape.y, turnsStationary: 0, isAlerted: true };
+    }
+    
+    // No escape route - remove from play
+    return { ...enemy, x: -1000, y: -1000 };
+  });
 }
 
 // Check if player is adjacent to any enemy (for adjacency effects)

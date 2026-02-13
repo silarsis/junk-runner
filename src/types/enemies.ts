@@ -80,9 +80,9 @@ export const ENEMY_DEFINITIONS: EnemyDefinition[] = [
     archetype: 'swarm',
     behaviour: 'wander',
     threatLevel: 'nuisance',
-    description: 'Mutated scavenger rodents glowing faintly. Attracted to dropped items.',
+    description: 'Mutated scavenger rodents glowing faintly. Attracted to junk piles — will eat them if not scared away.',
     moveSpeed: 1,
-    adjacencyEffect: 'Swarm if ignored',
+    adjacencyEffect: 'Eats junk piles over time. Scared away if stepped on.',
     spawnWeight: 40,
   },
   {
