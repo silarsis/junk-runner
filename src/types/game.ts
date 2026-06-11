@@ -33,7 +33,21 @@ export interface Item {
   movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
   // Solar panel specific
   solarRegenRate?: number; // Turns per 1 charge regen
+  // Storyline metadata - present on special story items only
+  storylineId?: string;
+  storyStepIndex?: number;
 }
+
+export interface StoryEmail {
+  id: string;
+  from: string;
+  subject: string;
+  body: string;
+  storylineId: string;
+  stepIndex: number; // index of the step that triggered this email; -1 for reward email
+  receivedAt: number;
+}
+
 
 export interface InventoryItem extends Item {
   gridX: number;
