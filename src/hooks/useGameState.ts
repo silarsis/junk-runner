@@ -1284,6 +1284,23 @@ export function useGameState() {
     });
   }, []);
 
+  const dismissEmail = useCallback((emailId: string) => {
+    setGameState(prev => {
+      if (!prev) return prev;
+      const pending = prev.player.pendingEmails || [];
+      const email = pending.find(e => e.id === emailId);
+      if (!email) return prev;
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          pendingEmails: pending.filter(e => e.id !== emailId),
+          readEmails: [...(prev.player.readEmails || []), email],
+        },
+      };
+    });
+  }, []);
+
   // Computed values
   const getMaxBattery = useCallback(() => {
     if (!gameState) return BASIC_BATTERY_CAPACITY;
@@ -1312,5 +1329,6 @@ export function useGameState() {
     purchaseBattery,
     getMaxBattery,
     resetGame,
+    dismissEmail,
   };
 }
