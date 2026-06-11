@@ -179,19 +179,8 @@ export interface PlayerState {
   readEmails?: StoryEmail[];
 }
 
-export interface Junkyard {
-  yardId: string;
-  seed: number;
-  width: number;
-  height: number;
-  revealedTiles: boolean[][];
-  piles: JunkPile[];
-  walls: WallTile[];
-  terrain: TerrainTile[];
-  droppedItems: DroppedItem[];
-  // Story item attached to this yard (delivered on first pile search)
-  pendingStoryItem?: { storylineId: string; stepIndex: number } | null;
-}
+
+
 
 export interface GameState {
   player: PlayerState;
