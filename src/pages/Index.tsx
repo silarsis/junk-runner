@@ -35,6 +35,8 @@ const Index = () => {
     removeComponent,
     getMaxBattery,
     resetGame,
+    dismissEmail,
+
   } = useGameState();
 
   const [currentScreen, setCurrentScreen] = useState<Screen>('base');
