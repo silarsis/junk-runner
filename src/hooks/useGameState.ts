@@ -846,13 +846,15 @@ export function useGameState() {
       if (!prev) return prev;
       
       const seed = Date.now();
-      const junkyard = generateJunkyard(seed);
+      let junkyard = generateJunkyard(seed);
+      junkyard = attachStoryItemIfLucky(junkyard, prev.player.storyProgress, prev.player.completedStorylines);
       
       return {
         ...prev,
         junkyard,
         player: { ...prev.player, playerX: 0, playerY: 0, currentYardId: null },
       };
+
     });
   }, []);
 
