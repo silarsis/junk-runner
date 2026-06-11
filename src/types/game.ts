@@ -102,7 +102,10 @@ export interface Junkyard {
   walls: WallTile[];
   terrain: TerrainTile[];
   droppedItems: DroppedItem[];
+  // Story item attached to this yard (delivered on first pile search)
+  pendingStoryItem?: { storylineId: string; stepIndex: number } | null;
 }
+
 
 export interface Bag {
   width: number;
