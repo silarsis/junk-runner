@@ -189,7 +189,16 @@ const Index = () => {
           />
         )}
       </AnimatePresence>
+
+      {/* Story Emails - only shown on base screen so they don't interrupt scavenging */}
+      {currentScreen === 'base' && (
+        <EmailModal
+          emails={gameState.player.pendingEmails || []}
+          onDismiss={dismissEmail}
+        />
+      )}
     </div>
+
   );
 };
 
