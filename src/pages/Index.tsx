@@ -9,6 +9,8 @@ import { SellScreen } from '@/components/game/SellScreen';
 import { UpgradesScreen } from '@/components/game/UpgradesScreen';
 import { WorkshopScreen } from '@/components/game/WorkshopScreen';
 import { StashModal } from '@/components/game/StashModal';
+import { EmailModal } from '@/components/game/EmailModal';
+
 
 type Screen = 'base' | 'junkyard' | 'cleaning' | 'sell' | 'upgrades' | 'workshop';
 
