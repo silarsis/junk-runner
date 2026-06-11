@@ -806,12 +806,91 @@ export function useGameState() {
       const primary = getPrimaryHelper(prev.player);
       const maxCapacity = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
       
+      // ---- Process any story items in stash: advance progress, queue emails, apply rewards ----
+      let stash = [...prev.player.stash];
+      const storyProgress: Record<string, number> = { ...(prev.player.storyProgress || {}) };
+      const completedStorylines: string[] = [...(prev.player.completedStorylines || [])];
+      const pendingEmails: StoryEmail[] = [...(prev.player.pendingEmails || [])];
+      let bonusCurrency = 0;
+      const grantedUpgrades: Partial<Record<keyof typeof prev.player.baseUpgrades, number>> = {};
+      const grantedStashItems: Item[] = [];
+      
+      // Group story items by storyline, sorted by step
+      const storyItemsInStash = stash.filter(i => typeof i.storylineId === 'string' && typeof i.storyStepIndex === 'number');
+      stash = stash.filter(i => !(typeof i.storylineId === 'string' && typeof i.storyStepIndex === 'number'));
+      storyItemsInStash.sort((a, b) => (a.storyStepIndex! - b.storyStepIndex!));
+      
+      for (const storyItem of storyItemsInStash) {
+        const storyline = STORYLINES.find(s => s.id === storyItem.storylineId);
+        if (!storyline) continue;
+        const step = storyline.steps[storyItem.storyStepIndex!];
+        if (!step) continue;
+        
+        // Advance progress to at least stepIndex+1
+        const current = storyProgress[storyline.id] ?? 0;
+        const advancedTo = Math.max(current, storyItem.storyStepIndex! + 1);
+        storyProgress[storyline.id] = advancedTo;
+        
+        // Queue the email for this step
+        pendingEmails.push({
+          id: uuidv4(),
+          from: step.emailFrom,
+          subject: step.emailSubject,
+          body: step.emailBody,
+          storylineId: storyline.id,
+          stepIndex: storyItem.storyStepIndex!,
+          receivedAt: Date.now(),
+        });
+        
+        // If we just completed the storyline, queue reward email + apply reward
+        if (advancedTo >= storyline.steps.length && !completedStorylines.includes(storyline.id)) {
+          completedStorylines.push(storyline.id);
+          pendingEmails.push({
+            id: uuidv4(),
+            from: storyline.rewardEmail.from,
+            subject: storyline.rewardEmail.subject,
+            body: storyline.rewardEmail.body,
+            storylineId: storyline.id,
+            stepIndex: -1,
+            receivedAt: Date.now() + 1,
+          });
+          
+          const reward = storyline.reward;
+          if (reward.type === 'currency') {
+            bonusCurrency += reward.amount;
+          } else if (reward.type === 'upgrade') {
+            grantedUpgrades[reward.upgradeId] = (grantedUpgrades[reward.upgradeId] || 0) + reward.levels;
+          } else if (reward.type === 'module') {
+            grantedStashItems.push({ ...reward.item, id: uuidv4() });
+          }
+        }
+      }
+      
+      // Apply granted upgrades (capped at maxLevel)
+      const newBaseUpgrades = { ...prev.player.baseUpgrades };
+      for (const [key, levels] of Object.entries(grantedUpgrades)) {
+        const upgrade = UPGRADES[key as keyof typeof UPGRADES];
+        if (!upgrade) continue;
+        const current = (newBaseUpgrades as any)[key] as number;
+        (newBaseUpgrades as any)[key] = Math.min(upgrade.maxLevel, current + (levels || 0));
+      }
+      stash = [...stash, ...grantedStashItems];
+      
+      const storyPlayerPatch: Partial<PlayerState> = {
+        stash,
+        storyProgress,
+        completedStorylines,
+        pendingEmails,
+        baseUpgrades: newBaseUpgrades,
+      };
+      
       if (!shouldRecharge) {
-        // Just return without recharging
         return {
           ...prev,
           player: { 
             ...prev.player, 
+            ...storyPlayerPatch,
+            currency: prev.player.currency + bonusCurrency,
             currentYardId: null,
           },
         };
@@ -819,14 +898,13 @@ export function useGameState() {
       
       // Calculate recharge cost
       const chargeNeeded = maxCapacity - prev.player.currentCharge;
-      const chargerLevel = prev.player.baseUpgrades.chargerEfficiency ?? 0;
+      const chargerLevel = newBaseUpgrades.chargerEfficiency ?? 0;
       const chargingCost = getChargingCost(chargeNeeded, chargerLevel);
+      const totalCurrency = prev.player.currency + bonusCurrency;
       
-      // Check if player can afford it
-      if (prev.player.currency < chargingCost) {
-        // Can't afford full recharge - charge as much as possible
+      if (totalCurrency < chargingCost) {
         const costPerUnit = UPGRADES.chargerEfficiency.getValue(chargerLevel);
-        const affordableCharge = Math.floor(prev.player.currency / costPerUnit);
+        const affordableCharge = costPerUnit > 0 ? Math.floor(totalCurrency / costPerUnit) : chargeNeeded;
         const actualCharge = Math.min(affordableCharge, chargeNeeded);
         const actualCost = getChargingCost(actualCharge, chargerLevel);
         
@@ -834,9 +912,10 @@ export function useGameState() {
           ...prev,
           player: { 
             ...prev.player, 
+            ...storyPlayerPatch,
             currentYardId: null,
             currentCharge: prev.player.currentCharge + actualCharge,
-            currency: prev.player.currency - actualCost,
+            currency: totalCurrency - actualCost,
           },
         };
       }
@@ -845,11 +924,13 @@ export function useGameState() {
         ...prev,
         player: { 
           ...prev.player, 
+          ...storyPlayerPatch,
           currentYardId: null,
           currentCharge: maxCapacity,
-          currency: prev.player.currency - chargingCost,
+          currency: totalCurrency - chargingCost,
         },
       };
+
     });
   }, [getChargingCost]);
 
