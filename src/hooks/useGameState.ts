@@ -742,15 +742,27 @@ export function useGameState() {
           }
         }
         
+        // Deliver pending story item, if any, straight to stash (so it can't
+        // be lost to a full bag), and mark it delivered on the junkyard.
+        let newStash = prev.player.stash;
+        let updatedYard = { ...prev.junkyard, piles: updatedPiles };
+        if (prev.junkyard.pendingStoryItem) {
+          const { storylineId, stepIndex } = prev.junkyard.pendingStoryItem;
+          newStash = [...newStash, createStoryItem(storylineId, stepIndex)];
+          updatedYard = { ...updatedYard, pendingStoryItem: null };
+        }
+        
         return {
           ...prev,
-          junkyard: { ...prev.junkyard, piles: updatedPiles },
+          junkyard: updatedYard,
           player: { 
             ...prev.player, 
+            stash: newStash,
             currentCharge: newCharge,
           },
           turnCount: newTurnCount,
         };
+
       } else {
         updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress };
         
