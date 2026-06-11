@@ -478,9 +478,11 @@ export function useGameState() {
       if (!junkyard) {
         const seed = Date.now();
         junkyard = generateJunkyard(seed);
+        junkyard = attachStoryItemIfLucky(junkyard, prev.player.storyProgress, prev.player.completedStorylines);
         playerX = 0;
         playerY = 0;
       }
+
       
       junkyard = revealTilesAround(junkyard, playerX, playerY);
       
