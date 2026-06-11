@@ -168,6 +168,26 @@ export interface PlayerState {
   playerX: number;
   playerY: number;
   currentCharge: number; // Current battery charge for active helper
+  // Storyline progress: storylineId -> number of steps completed
+  storyProgress?: Record<string, number>;
+  completedStorylines?: string[];
+  // Unread emails awaiting display, and read-archive
+  pendingEmails?: StoryEmail[];
+  readEmails?: StoryEmail[];
+}
+
+export interface Junkyard {
+  yardId: string;
+  seed: number;
+  width: number;
+  height: number;
+  revealedTiles: boolean[][];
+  piles: JunkPile[];
+  walls: WallTile[];
+  terrain: TerrainTile[];
+  droppedItems: DroppedItem[];
+  // Story item attached to this yard (delivered on first pile search)
+  pendingStoryItem?: { storylineId: string; stepIndex: number } | null;
 }
 
 export interface GameState {
@@ -175,6 +195,7 @@ export interface GameState {
   junkyard: Junkyard | null;
   turnCount: number;
 }
+
 
 // Default values for basic components
 export const BASIC_BATTERY_CAPACITY = 20;
