@@ -56,24 +56,6 @@ export const UPGRADES: Record<string, UpgradeInfo> = {
     getCost: (level) => 100 * (level + 1),
     getValue: (level) => 1 - (level * 0.15), // 1.0, 0.85, 0.70, 0.55, 0.40, 0.25
   },
-  baseRechargeRate: {
-    id: 'baseRechargeRate',
-    name: 'Base Slow Recharge',
-    description: 'Passive battery recharge while at base',
-    icon: '⚡',
-    maxLevel: 4,
-    getCost: (level) => 150 * Math.pow(2, level),
-    getValue: (level) => 300 - (level * 60), // 300s, 240s, 180s, 120s, 60s (5min -> 1min)
-  },
-  shopPrices: {
-    id: 'shopPrices',
-    name: 'Haggling',
-    description: 'Get better prices when selling',
-    icon: '💰',
-    maxLevel: 3,
-    getCost: (level) => 250 * Math.pow(2, level),
-    getValue: (level) => 1 + (level === 1 ? 0.1 : level === 2 ? 0.25 : level === 3 ? 0.5 : 0), // 10%, 25%, 50%
-  },
 };
 
 export interface HelperFrameInfo {
@@ -91,7 +73,7 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Basic Frame',
     slots: {
       mobilitySlots: 1,
-      moduleSlots: 2, // +1 for launcher
+      moduleSlots: 1,
       batterySlots: 1,
     },
     icon: '🤖',
@@ -103,7 +85,7 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Crawler Frame',
     slots: {
       mobilitySlots: 1,
-      moduleSlots: 3, // +1 for launcher
+      moduleSlots: 2,
       batterySlots: 1,
     },
     icon: '🐛',
@@ -115,47 +97,11 @@ export const HELPER_FRAMES: Record<FrameType, HelperFrameInfo> = {
     name: 'Scout Frame',
     slots: {
       mobilitySlots: 1,
-      moduleSlots: 4, // +1 for launcher
+      moduleSlots: 3,
       batterySlots: 2,
     },
     icon: '🔭',
     cost: 300,
     requiredComponents: ['Circuit Board', 'Power Cell'],
-  },
-  hauler: {
-    id: 'hauler',
-    name: 'Hauler Frame',
-    slots: {
-      mobilitySlots: 1,
-      moduleSlots: 5, // +1 for launcher
-      batterySlots: 1,
-    },
-    icon: '🚛',
-    cost: 400,
-    requiredComponents: ['Motor Unit', 'Steel Plate', 'Titanium Scrap'],
-  },
-  explorer: {
-    id: 'explorer',
-    name: 'Explorer Frame',
-    slots: {
-      mobilitySlots: 2,
-      moduleSlots: 4, // +1 for launcher
-      batterySlots: 2,
-    },
-    icon: '🧭',
-    cost: 500,
-    requiredComponents: ['Quantum Chip', 'Circuit Board', 'Motor Unit'],
-  },
-  titan: {
-    id: 'titan',
-    name: 'Titan Frame',
-    slots: {
-      mobilitySlots: 2,
-      moduleSlots: 6, // +1 for launcher
-      batterySlots: 3,
-    },
-    icon: '🦾',
-    cost: 800,
-    requiredComponents: ['Fusion Core', 'Quantum Chip', 'Titanium Scrap'],
   },
 };

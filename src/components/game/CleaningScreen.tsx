@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Clock, Check, Sparkles, RefreshCw } from 'lucide-react';
+import { X, Clock, Check, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Item, CleaningJob } from '@/types/game';
 import { cn } from '@/lib/utils';
@@ -9,7 +9,7 @@ interface CleaningScreenProps {
   stash: Item[];
   cleaningJobs: CleaningJob[];
   maxSlots: number;
-  onStartCleaning: (itemId: string, replaceJobId?: string) => void;
+  onStartCleaning: (itemId: string) => void;
   onCollectCleaned: (jobId: string) => void;
   onClose: () => void;
 }
@@ -30,7 +30,6 @@ export function CleaningScreen({
   onClose,
 }: CleaningScreenProps) {
   const [, setTick] = useState(0);
-  const [replacingJobId, setReplacingJobId] = useState<string | null>(null);
   const dirtyItems = stash.filter(item => item.isDirty);
 
   // Update every second to show progress
@@ -123,19 +122,9 @@ export function CleaningScreen({
                         Collect
                       </Button>
                     ) : (
-                      <div className="flex items-center gap-2">
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Clock className="w-4 h-4" />
-                          <span className="font-mono text-sm">{formatTime(remaining)}</span>
-                        </div>
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => setReplacingJobId(replacingJobId === job.jobId ? null : job.jobId)}
-                          className={cn(replacingJobId === job.jobId && "bg-destructive/20 text-destructive")}
-                        >
-                          <RefreshCw className="w-4 h-4" />
-                        </Button>
+                      <div className="flex items-center gap-1 text-muted-foreground">
+                        <Clock className="w-4 h-4" />
+                        <span className="font-mono text-sm">{formatTime(remaining)}</span>
                       </div>
                     )}
                   </div>
@@ -179,15 +168,13 @@ export function CleaningScreen({
                   </p>
                 </div>
                 <Button
-                  variant={replacingJobId ? "destructive" : "steel"}
+                  variant="steel"
                   size="sm"
-                  onClick={() => {
-                    onStartCleaning(item.id, replacingJobId ?? undefined);
-                    setReplacingJobId(null);
-                  }}
+                  onClick={() => onStartCleaning(item.id)}
+                  disabled={cleaningJobs.length >= maxSlots}
                 >
                   <Sparkles className="w-4 h-4" />
-                  {replacingJobId ? 'Replace' : 'Clean'}
+                  Clean
                 </Button>
               </motion.div>
             ))}

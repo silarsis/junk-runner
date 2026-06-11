@@ -25,29 +25,6 @@ export class AppErrorBoundary extends React.Component<
     console.error("App crashed:", error, info);
   }
 
-  componentDidMount() {
-    window.addEventListener("error", this.handleGlobalError);
-    window.addEventListener("unhandledrejection", this.handleUnhandledRejection);
-  }
-
-  componentWillUnmount() {
-    window.removeEventListener("error", this.handleGlobalError);
-    window.removeEventListener("unhandledrejection", this.handleUnhandledRejection);
-  }
-
-  private handleGlobalError = (event: ErrorEvent) => {
-    if (this.state.error) return;
-    const err = event.error instanceof Error ? event.error : new Error(event.message);
-    this.setState({ error: err });
-  };
-
-  private handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-    if (this.state.error) return;
-    const reason = event.reason;
-    const err = reason instanceof Error ? reason : new Error(String(reason));
-    this.setState({ error: err });
-  };
-
   private handleResetSave = () => {
     try {
       localStorage.removeItem(STORAGE_KEY);

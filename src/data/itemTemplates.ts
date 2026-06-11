@@ -16,7 +16,6 @@ interface ItemTemplate {
   storageMaxWeight?: number;
   movementType?: 'basic' | 'diagonal' | 'jump' | 'extended';
   solarRegenRate?: number; // Turns per 1 charge regen (lower = better)
-  pileRevealCount?: number; // How many items to reveal in junk piles
 }
 
 export const ITEM_TEMPLATES: ItemTemplate[] = [
@@ -35,11 +34,11 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Quantum Chip', category: 'component', rarity: 'epic', sizeW: 1, sizeH: 1, weight: 1, baseValue: 200, icon: '💠' },
   { name: 'Fusion Core', category: 'component', rarity: 'legendary', sizeW: 2, sizeH: 2, weight: 4, baseValue: 500, icon: '⚡' },
   
-  // Batteries - findable in junkyard (doubled capacities for infinite junkyard)
-  { name: 'Salvaged Battery', category: 'battery', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 60, icon: '🔋', batteryCapacity: 50 },
-  { name: 'Industrial Battery', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 5, baseValue: 120, icon: '🔋', batteryCapacity: 70 },
-  { name: 'High-Capacity Cell', category: 'battery', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 4, baseValue: 250, icon: '⚡', batteryCapacity: 100 },
-  { name: 'Quantum Battery', category: 'battery', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 2, baseValue: 500, icon: '💎', batteryCapacity: 150 },
+  // Batteries - findable in junkyard
+  { name: 'Salvaged Battery', category: 'battery', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 60, icon: '🔋', batteryCapacity: 25 },
+  { name: 'Industrial Battery', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 5, baseValue: 120, icon: '🔋', batteryCapacity: 35 },
+  { name: 'High-Capacity Cell', category: 'battery', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 4, baseValue: 250, icon: '⚡', batteryCapacity: 50 },
+  { name: 'Quantum Battery', category: 'battery', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 2, baseValue: 500, icon: '💎', batteryCapacity: 75 },
   
   // Storage Modules - findable in junkyard
   { name: 'Salvaged Cargo Pod', category: 'storage', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 80, icon: '📦', storageWidth: 5, storageHeight: 5, storageMaxWeight: 35 },
@@ -51,12 +50,11 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Racing Wheels', category: 'mobility', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 3, baseValue: 160, icon: '🏎️', movementType: 'extended' },
   { name: 'All-Terrain Treads', category: 'mobility', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 6, baseValue: 140, icon: '⛓️', movementType: 'basic' },
   { name: 'Spider Legs', category: 'mobility', rarity: 'epic', sizeW: 2, sizeH: 2, weight: 5, baseValue: 280, icon: '🕷️', movementType: 'diagonal' },
+  { name: 'Jump Jets', category: 'mobility', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 3, baseValue: 450, icon: '🚀', movementType: 'jump' },
   
-  // Pile Scanners - reveal items in junk piles before scavenging
-  { name: 'Basic Pile Scanner', category: 'module', rarity: 'uncommon', sizeW: 1, sizeH: 1, weight: 1, baseValue: 80, icon: '🔍', pileRevealCount: 1 },
-  { name: 'Enhanced Pile Scanner', category: 'module', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 180, icon: '🔎', pileRevealCount: 2 },
-  { name: 'Advanced Pile Scanner', category: 'module', rarity: 'epic', sizeW: 2, sizeH: 1, weight: 2, baseValue: 350, icon: '📡', pileRevealCount: 3 },
-  { name: 'Quantum Pile Scanner', category: 'module', rarity: 'legendary', sizeW: 2, sizeH: 1, weight: 1, baseValue: 600, icon: '🛰️', pileRevealCount: 5 },
+  // General Modules
+  { name: 'Scanner Array', category: 'module', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 150, icon: '📡' },
+  { name: 'Cleaning Assist', category: 'module', rarity: 'uncommon', sizeW: 1, sizeH: 2, weight: 3, baseValue: 120, icon: '🧹' },
   
   // Solar Panels - passive battery regen in junkyard
   { name: 'Salvaged Solar Panel', category: 'module', rarity: 'uncommon', sizeW: 2, sizeH: 1, weight: 2, baseValue: 100, icon: '☀️', solarRegenRate: 5 },
@@ -73,11 +71,11 @@ export const ITEM_TEMPLATES: ItemTemplate[] = [
   { name: 'Old Camera', category: 'junk', rarity: 'rare', sizeW: 2, sizeH: 1, weight: 2, baseValue: 45, icon: '📷' },
 ];
 
-// Batteries available for purchase at base (doubled capacities for infinite junkyard)
+// Batteries available for purchase at base
 export const SHOP_BATTERIES: ItemTemplate[] = [
-  { name: 'Basic Battery Pack', category: 'battery', rarity: 'common', sizeW: 1, sizeH: 2, weight: 3, baseValue: 80, icon: '🔋', batteryCapacity: 50 },
-  { name: 'Enhanced Battery', category: 'battery', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 150, icon: '🔋', batteryCapacity: 70 },
-  { name: 'Pro Battery Module', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 4, baseValue: 300, icon: '⚡', batteryCapacity: 100 },
+  { name: 'Basic Battery Pack', category: 'battery', rarity: 'common', sizeW: 1, sizeH: 2, weight: 3, baseValue: 80, icon: '🔋', batteryCapacity: 25 },
+  { name: 'Enhanced Battery', category: 'battery', rarity: 'uncommon', sizeW: 2, sizeH: 2, weight: 4, baseValue: 150, icon: '🔋', batteryCapacity: 35 },
+  { name: 'Pro Battery Module', category: 'battery', rarity: 'rare', sizeW: 2, sizeH: 2, weight: 4, baseValue: 300, icon: '⚡', batteryCapacity: 50 },
 ];
 
 // Storage modules for purchase
@@ -154,7 +152,7 @@ export function createBasicBattery(): Item {
     hiddenModifiers: [],
     revealedModifiers: [],
     icon: '🔋',
-    batteryCapacity: 40, // Doubled for infinite junkyard
+    batteryCapacity: 20,
   };
 }
 
@@ -195,24 +193,5 @@ export function createBasicMobility(): Item {
     revealedModifiers: [],
     icon: '⛓️',
     movementType: 'basic',
-  };
-}
-
-export function createBasicLauncher(): Item {
-  return {
-    id: 'basic-launcher',
-    name: 'Basic Launcher',
-    category: 'launcher',
-    rarity: 'common',
-    condition: 100,
-    isDirty: false,
-    sizeW: 1,
-    sizeH: 1,
-    weight: 2,
-    baseValue: 0,
-    hiddenModifiers: [],
-    revealedModifiers: [],
-    icon: '🎯',
-    launcherCapacity: 1,
   };
 }

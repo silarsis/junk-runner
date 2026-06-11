@@ -1,5 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
-import { toast } from '@/hooks/use-toast';
+import { useState, useEffect, useCallback } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { 
   GameState, 
@@ -10,27 +9,14 @@ import {
   InventoryItem,
   CleaningJob,
   Rarity,
-  ItemCategory,
   HelperRobot,
   Bag,
   TerrainTile,
-  CleaningBot,
-  CleaningBotPriority,
-  InfiniteJunkyard,
-  SerializableInfiniteJunkyard,
   BASIC_BATTERY_CAPACITY,
   BASIC_STORAGE_WIDTH,
   BASIC_STORAGE_HEIGHT,
   BASIC_STORAGE_WEIGHT,
 } from '@/types/game';
-import { 
-  worldToChunk,
-  worldToLocal,
-  makeChunkKey,
-  getChunkDistance,
-  serializeInfiniteJunkyard,
-  deserializeInfiniteJunkyard,
-} from '@/types/chunk';
 import { 
   ITEM_TEMPLATES, 
   RARITY_WEIGHTS, 
@@ -39,52 +25,53 @@ import {
   createBasicBattery,
   createBasicStorage,
   createBasicMobility,
-  createBasicLauncher,
 } from '@/data/itemTemplates';
-import { generateJunkyard, isTilePassable, getTerrainAt, getEnemyAt, TERRAIN_DISPLAY } from '@/lib/terrainGenerator';
-import { 
-  createInfiniteJunkyard,
-  revealTilesAroundWorld,
-  isWorldTilePassable,
-  getWorldTerrainAt,
-  getWorldEnemyAt,
-  getWorldWallAt,
-  getWorldBarrierAt,
-  getWorldPileAt,
-  isAtEntrance,
-  getOrGenerateChunk,
-  generateLootForChunk,
-  getChunkSafe,
-  setChunkSafe,
-  CHUNK_WIDTH,
-  CHUNK_HEIGHT,
-} from '@/lib/chunkGenerator';
-import { processEnemyTurns, getAdjacentEnemies, applyStatusEffectToEnemies, scareGlowRats } from '@/lib/enemyAI';
-import { getEnemyDefinition, Enemy, EnemyStatusEffect, EnemyStatus } from '@/types/enemies';
-import { getConsumableDefinition, ConsumableType, CONSUMABLE_DEFINITIONS } from '@/data/consumableData';
-import { 
-  showEnemyEncounterToast, 
-  getCollisionEffects, 
-  getAdjacencyEffects,
-  showAdjacencyWarningToast,
-} from '@/components/game/EnemyEncounterToast';
+import { generateJunkyard, isTilePassable, getTerrainAt } from '@/lib/terrainGenerator';
 import { HELPER_FRAMES, UPGRADES } from '@/data/upgradeData';
-import { CraftingRecipe, hasIngredients } from '@/data/craftingRecipes';
-import { TERRAIN_EFFECTS } from '@/components/game/TerrainToast';
+import { STORYLINES, createStoryItem } from '@/data/storylines';
+import type { StoryEmail } from '@/types/game';
 
-const STORAGE_KEY = 'junkrunner_save';
-const REVEAL_RADIUS = 2;
-const SHOP_REFRESH_INTERVAL = 30 * 60 * 1000; // 30 minutes in milliseconds
+// Chance per new junkyard to embed a story item
+const STORY_ITEM_CHANCE = 0.22;
 
-// Repair cost: 1 scrap per 10% condition restored
-const REPAIR_SCRAP_NAME = 'Rusty Bolt';
-
-// Shop item interface
-export interface ShopItem {
-  item: Item;
-  buyPrice: number;
+// Pick the next storyline+step the player should encounter. Returns null if all
+// active storylines completed. Prefers continuing an in-progress storyline.
+function pickNextStoryStep(
+  storyProgress: Record<string, number> | undefined,
+  completed: string[] | undefined,
+): { storylineId: string; stepIndex: number } | null {
+  const progress = storyProgress || {};
+  const done = new Set(completed || []);
+  // 1) Continue an in-progress storyline
+  for (const s of STORYLINES) {
+    if (done.has(s.id)) continue;
+    const step = progress[s.id] ?? 0;
+    if (step > 0 && step < s.steps.length) {
+      return { storylineId: s.id, stepIndex: step };
+    }
+  }
+  // 2) Start a new storyline (random among un-started, un-completed)
+  const available = STORYLINES.filter(s => !done.has(s.id) && !(progress[s.id] && progress[s.id] > 0));
+  if (available.length === 0) return null;
+  const pick = available[Math.floor(Math.random() * available.length)];
+  return { storylineId: pick.id, stepIndex: 0 };
 }
 
+function attachStoryItemIfLucky(
+  junkyard: Junkyard,
+  storyProgress: Record<string, number> | undefined,
+  completed: string[] | undefined,
+): Junkyard {
+  if (Math.random() > STORY_ITEM_CHANCE) return junkyard;
+  const next = pickNextStoryStep(storyProgress, completed);
+  if (!next) return junkyard;
+  return { ...junkyard, pendingStoryItem: next };
+}
+
+
+const STORAGE_KEY = 'junkrunner_save';
+const SEARCH_TURNS_REQUIRED = 5;
+const REVEAL_RADIUS = 2;
 
 function createPrimaryHelper(): HelperRobot {
   return {
@@ -94,8 +81,6 @@ function createPrimaryHelper(): HelperRobot {
       mobility: createBasicMobility(),
       modules: [createBasicStorage()],
       battery: createBasicBattery(),
-      launcher: createBasicLauncher(),
-      loadedConsumables: [],
     },
     isDeployed: true,
     isPrimary: true,
@@ -113,17 +98,12 @@ function createInitialPlayerState(): PlayerState {
       workshopTier: 0,
       controlCapacity: 0,
       chargerEfficiency: 0,
-      baseRechargeRate: 0,
-      shopPrices: 0,
     },
     helpers: [createPrimaryHelper()],
     cleaningJobs: [],
     playerX: 0,
     playerY: 0,
     currentCharge: BASIC_BATTERY_CAPACITY,
-    automation: {
-      cleaningBot: null,
-    },
   };
 }
 
@@ -193,105 +173,10 @@ function generateLoot(seed: number): Item[] {
       storageMaxWeight: template.storageMaxWeight,
       movementType: template.movementType,
       solarRegenRate: template.solarRegenRate,
-      pileRevealCount: template.pileRevealCount,
     });
   }
   
   return items;
-}
-
-// Generate shop inventory - scrap, components, and consumables
-function generateShopInventory(seed: number): ShopItem[] {
-  const random = seededRandom(seed);
-  const items: ShopItem[] = [];
-  
-  // Regular items: 4-6
-  const regularItemCount = 4 + Math.floor(random() * 3);
-  
-  // Filter templates to only scrap and components
-  const shopTemplates = ITEM_TEMPLATES.filter(
-    t => t.category === 'scrap' || t.category === 'component'
-  );
-  
-  for (let i = 0; i < regularItemCount; i++) {
-    const rarity = pickRarity(random);
-    const templates = shopTemplates.filter(t => t.rarity === rarity);
-    if (templates.length === 0) continue;
-    
-    const template = templates[Math.floor(random() * templates.length)];
-    
-    // Create a clean item at full condition
-    const item: Item = {
-      id: uuidv4(),
-      name: template.name,
-      category: template.category,
-      rarity: template.rarity,
-      condition: 100, // Always clean/full condition
-      isDirty: false,
-      sizeW: template.sizeW,
-      sizeH: template.sizeH,
-      weight: template.weight,
-      baseValue: template.baseValue,
-      hiddenModifiers: [],
-      revealedModifiers: [],
-      icon: template.icon,
-    };
-    
-    // Calculate buy price: 110% of the clean item sell value
-    const rarityMult: Record<Rarity, number> = {
-      common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
-    };
-    const cleanSellPrice = Math.floor(template.baseValue * rarityMult[template.rarity]);
-    const buyPrice = Math.ceil(cleanSellPrice * 1.1);
-    
-    items.push({ item, buyPrice });
-  }
-  
-  // Add consumables: 2-4 random consumables
-  const consumableCount = 2 + Math.floor(random() * 3);
-  const shuffledConsumables = [...CONSUMABLE_DEFINITIONS].sort(() => random() - 0.5);
-  
-  for (let i = 0; i < Math.min(consumableCount, shuffledConsumables.length); i++) {
-    const consumableDef = shuffledConsumables[i];
-    
-    const consumableItem: Item = {
-      id: uuidv4(),
-      name: consumableDef.name,
-      category: 'consumable',
-      rarity: 'uncommon', // Base rarity for consumables
-      condition: 100,
-      isDirty: false,
-      sizeW: 1,
-      sizeH: 1,
-      weight: 0.5,
-      baseValue: 15, // Base value for consumables
-      hiddenModifiers: [],
-      revealedModifiers: [],
-      icon: consumableDef.icon,
-      consumableType: consumableDef.id,
-    };
-    
-    // Consumable buy price: 20-35 based on how many enemies it counters
-    // Special case: Recall Beacon is a utility item with higher value
-    let buyPrice: number;
-    if (consumableDef.id === 'recall_beacon') {
-      buyPrice = 75; // Premium utility item
-    } else {
-      const counterBonus = consumableDef.countersEnemies.length * 3;
-      buyPrice = 20 + counterBonus;
-    }
-    
-    items.push({ item: consumableItem, buyPrice });
-  }
-  
-  return items;
-}
-
-// Get the next shop refresh time based on current time
-function getNextShopRefreshTime(currentTime: number = Date.now()): number {
-  // Round up to the next 30-minute interval
-  const intervalStart = Math.floor(currentTime / SHOP_REFRESH_INTERVAL) * SHOP_REFRESH_INTERVAL;
-  return intervalStart + SHOP_REFRESH_INTERVAL;
 }
 
 // Get the bag (storage) from the primary helper's storage module
@@ -337,14 +222,6 @@ function calculateSolarRegen(turnCount: number, regenRate: number, maxCharge: nu
     return Math.min(1, maxCharge - currentCharge);
   }
   return 0;
-}
-
-// Get pile scanner reveal count from helper modules (highest = best)
-function getHelperPileRevealCount(helper: HelperRobot): number {
-  const scannerModules = helper.components.modules.filter(m => m?.pileRevealCount);
-  if (scannerModules.length === 0) return 0;
-  // Return the best (highest) reveal count
-  return Math.max(...scannerModules.map(m => m.pileRevealCount!));
 }
 
 // Get primary helper
@@ -406,246 +283,6 @@ export function useGameState() {
   const [isLoading, setIsLoading] = useState(true);
   // Runtime bag state (not persisted directly, derived from helper)
   const [bagItems, setBagItems] = useState<InventoryItem[]>([]);
-  // Found items for alert display
-  const [foundItems, setFoundItems] = useState<Item[]>([]);
-  // Last terrain stepped on for notification
-  const [lastTerrainType, setLastTerrainType] = useState<TerrainTile | null>(null);
-  // Shop state - persisted separately
-  const [shopInventory, setShopInventory] = useState<ShopItem[]>([]);
-  const [shopRefreshTime, setShopRefreshTime] = useState<number>(0);
-  
-  // Generate or refresh shop inventory when needed
-  useEffect(() => {
-    const now = Date.now();
-
-    let storedShop: string | null = null;
-    try {
-      storedShop = localStorage.getItem('junkrunner_shop');
-    } catch (err) {
-      console.warn('Shop storage unavailable; regenerating shop inventory.', err);
-    }
-
-    if (storedShop) {
-      try {
-        const parsed = JSON.parse(storedShop);
-        if (parsed.refreshTime && parsed.refreshTime > now && Array.isArray(parsed.inventory)) {
-          // Shop is still valid
-          setShopInventory(parsed.inventory);
-          setShopRefreshTime(parsed.refreshTime);
-          return;
-        }
-      } catch (e) {
-        // Invalid data, regenerate
-      }
-    }
-
-    // Generate new shop inventory
-    const seed = Math.floor(now / SHOP_REFRESH_INTERVAL);
-    const newInventory = generateShopInventory(seed);
-    const newRefreshTime = getNextShopRefreshTime(now);
-
-    setShopInventory(newInventory);
-    setShopRefreshTime(newRefreshTime);
-
-    // Save to localStorage
-    try {
-      localStorage.setItem(
-        'junkrunner_shop',
-        JSON.stringify({
-          inventory: newInventory,
-          refreshTime: newRefreshTime,
-        }),
-      );
-    } catch (err) {
-      console.warn('Failed to persist shop inventory.', err);
-    }
-  }, []);
-  
-  // Check for shop refresh periodically
-  useEffect(() => {
-    const checkRefresh = () => {
-      const now = Date.now();
-      if (now >= shopRefreshTime && shopRefreshTime > 0) {
-        const seed = Math.floor(now / SHOP_REFRESH_INTERVAL);
-        const newInventory = generateShopInventory(seed);
-        const newRefreshTime = getNextShopRefreshTime(now);
-
-        setShopInventory(newInventory);
-        setShopRefreshTime(newRefreshTime);
-
-        try {
-          localStorage.setItem(
-            'junkrunner_shop',
-            JSON.stringify({
-              inventory: newInventory,
-              refreshTime: newRefreshTime,
-            }),
-          );
-        } catch (err) {
-          console.warn('Failed to persist refreshed shop inventory.', err);
-        }
-      }
-    };
-
-    // Check every minute
-    const intervalId = setInterval(checkRefresh, 60 * 1000);
-    return () => clearInterval(intervalId);
-  }, [shopRefreshTime]);
-
-  // Cleaning bot automation - runs every second to auto-collect and queue items
-  // Use refs to track notifications without causing re-renders
-  const lastCollectedRef = useRef<string[]>([]);
-  const lastQueuedRef = useRef<string[]>([]);
-  
-  useEffect(() => {
-    if (!gameState) return;
-    
-    const bot = gameState.player.automation.cleaningBot;
-    if (!bot || !bot.isActive) return;
-    
-    const processCleaningBot = () => {
-      let collectedItems: string[] = [];
-      let queuedItems: string[] = [];
-      
-      setGameState(prev => {
-        if (!prev) return prev;
-        
-        const currentBot = prev.player.automation.cleaningBot;
-        if (!currentBot || !currentBot.isActive) return prev;
-        
-        const now = Date.now();
-        let newStash = [...prev.player.stash];
-        let newJobs = [...prev.player.cleaningJobs];
-        let hasChanges = false;
-        
-        // Step 1: Auto-collect completed cleaning jobs
-        const completedJobs = newJobs.filter(job => {
-          const elapsed = now - job.startTime;
-          return elapsed >= job.duration;
-        });
-        
-        if (completedJobs.length > 0) {
-          hasChanges = true;
-          
-          // Track collected items for notification
-          collectedItems = completedJobs.map(job => job.item.name);
-          
-          // Move completed items to stash (cleaned)
-          for (const job of completedJobs) {
-            const cleanedItem: Item = {
-              ...job.item,
-              isDirty: false,
-            };
-            newStash.push(cleanedItem);
-          }
-          
-          // Remove completed jobs
-          const completedIds = new Set(completedJobs.map(j => j.jobId));
-          newJobs = newJobs.filter(j => !completedIds.has(j.jobId));
-        }
-        
-        // Step 2: Queue new dirty items if slots are available
-        const maxSlots = 1 + prev.player.baseUpgrades.cleaningSlots;
-        const availableSlots = maxSlots - newJobs.length;
-        
-        if (availableSlots > 0) {
-          // Get dirty items from stash (use newStash since we may have just added items)
-          const dirtyItems = newStash.filter(item => item.isDirty);
-          
-          if (dirtyItems.length > 0) {
-            // Sort by priority
-            const { rarityOrder, categoryOrder } = currentBot.priority;
-            
-            const sortedDirty = [...dirtyItems].sort((a, b) => {
-              const rarityA = rarityOrder.indexOf(a.rarity);
-              const rarityB = rarityOrder.indexOf(b.rarity);
-              if (rarityA !== rarityB) return rarityA - rarityB;
-              
-              const categoryA = categoryOrder.indexOf(a.category);
-              const categoryB = categoryOrder.indexOf(b.category);
-              return categoryA - categoryB;
-            });
-            
-            // Take items to auto-clean (limited by available slots)
-            const itemsToClean = sortedDirty.slice(0, availableSlots);
-            
-            if (itemsToClean.length > 0) {
-              hasChanges = true;
-              
-              // Track queued items for notification
-              queuedItems = itemsToClean.map(i => i.name);
-              
-              // Calculate cleaning speed multiplier
-              const speedMultiplier = 1 + prev.player.baseUpgrades.cleaningSpeed * 0.2;
-              
-              // Create cleaning jobs
-              const newCleaningJobs: CleaningJob[] = itemsToClean.map(item => ({
-                jobId: uuidv4(),
-                itemId: item.id,
-                item: { ...item },
-                startTime: now,
-                duration: getCleaningDuration(item, speedMultiplier),
-              }));
-              
-              // Remove items from stash
-              const itemIdsToRemove = new Set(itemsToClean.map(i => i.id));
-              newStash = newStash.filter(i => !itemIdsToRemove.has(i.id));
-              
-              // Add new jobs
-              newJobs = [...newJobs, ...newCleaningJobs];
-            }
-          }
-        }
-        
-        if (!hasChanges) return prev;
-        
-        return {
-          ...prev,
-          player: {
-            ...prev.player,
-            stash: newStash,
-            cleaningJobs: newJobs,
-            automation: {
-              ...prev.player.automation,
-              cleaningBot: {
-                ...currentBot,
-                lastProcessedTime: now,
-              },
-            },
-          },
-        };
-      });
-      
-      // Show toast notifications after state update (outside setGameState)
-      if (collectedItems.length > 0) {
-        const itemList = collectedItems.length <= 2 
-          ? collectedItems.join(', ') 
-          : `${collectedItems.slice(0, 2).join(', ')} +${collectedItems.length - 2} more`;
-        toast({
-          title: "🤖 Bot: Cleaned",
-          description: itemList,
-          duration: 3000,
-        });
-      }
-      
-      if (queuedItems.length > 0) {
-        const itemList = queuedItems.length <= 2 
-          ? queuedItems.join(', ') 
-          : `${queuedItems.slice(0, 2).join(', ')} +${queuedItems.length - 2} more`;
-        toast({
-          title: "🤖 Bot: Queued for cleaning",
-          description: itemList,
-          duration: 3000,
-        });
-      }
-    };
-    
-    // Run immediately and then every second
-    processCleaningBot();
-    const intervalId = setInterval(processCleaningBot, 1000);
-    
-    return () => clearInterval(intervalId);
-  }, [gameState?.player.automation.cleaningBot?.isActive]);
 
   // Load game state
   useEffect(() => {
@@ -667,13 +304,12 @@ export function useGameState() {
         // Migration: ensure baseUpgrades exists and has numeric fields
         if (!parsed.player.baseUpgrades || typeof parsed.player.baseUpgrades !== 'object') {
           parsed.player.baseUpgrades = {
-          cleaningSlots: 0,
-          cleaningSpeed: 0,
-          workshopTier: 0,
-          controlCapacity: 0,
-          chargerEfficiency: 0,
-          baseRechargeRate: 0,
-        };
+            cleaningSlots: 0,
+            cleaningSpeed: 0,
+            workshopTier: 0,
+            controlCapacity: 0,
+            chargerEfficiency: 0,
+          };
         }
         const bu = parsed.player.baseUpgrades as Record<string, unknown>;
         const ensureNumber = (key: string, fallback = 0) => {
@@ -685,7 +321,6 @@ export function useGameState() {
         ensureNumber('workshopTier');
         ensureNumber('controlCapacity');
         ensureNumber('chargerEfficiency');
-        ensureNumber('baseRechargeRate');
 
         // Migration: ensure arrays exist
         if (!Array.isArray(parsed.player.stash)) {
@@ -741,49 +376,6 @@ export function useGameState() {
 
         parsed.player.cleaningJobs = (parsed.player.cleaningJobs as unknown[]).filter(isValidCleaningJob);
 
-        // Migration: ensure automation state exists and is valid
-        if (!parsed.player.automation || typeof parsed.player.automation !== 'object') {
-          parsed.player.automation = { cleaningBot: null };
-        } else {
-          // Validate cleaningBot if it exists
-          const bot = parsed.player.automation.cleaningBot;
-          if (bot !== null) {
-            // Check if bot has valid structure
-            const isBotValid = isRecord(bot) &&
-              typeof bot.id === 'string' &&
-              typeof bot.isActive === 'boolean' &&
-              isRecord(bot.priority) &&
-              Array.isArray(bot.priority.rarityOrder) &&
-              Array.isArray(bot.priority.categoryOrder);
-            
-            if (!isBotValid) {
-              // Bot data is corrupted, reset it
-              parsed.player.automation.cleaningBot = null;
-            } else {
-              // Ensure priority arrays have all required values (in case new rarities/categories were added)
-              const validRarities: Rarity[] = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
-              const validCategories: ItemCategory[] = ['component', 'module', 'battery', 'mobility', 'storage', 'scrap', 'junk'];
-              
-              const priority = bot.priority as { rarityOrder: string[]; categoryOrder: string[] };
-              
-              // Filter to only valid rarities and add any missing ones at the end
-              const existingRarities = priority.rarityOrder.filter(r => validRarities.includes(r as Rarity));
-              const missingRarities = validRarities.filter(r => !existingRarities.includes(r));
-              parsed.player.automation.cleaningBot.priority.rarityOrder = [...existingRarities, ...missingRarities] as Rarity[];
-              
-              // Filter to only valid categories and add any missing ones at the end
-              const existingCategories = priority.categoryOrder.filter(c => validCategories.includes(c as ItemCategory));
-              const missingCategories = validCategories.filter(c => !existingCategories.includes(c));
-              parsed.player.automation.cleaningBot.priority.categoryOrder = [...existingCategories, ...missingCategories] as ItemCategory[];
-              
-              // Ensure lastProcessedTime exists
-              if (typeof bot.lastProcessedTime !== 'number') {
-                parsed.player.automation.cleaningBot.lastProcessedTime = 0;
-              }
-            }
-          }
-        }
-
         // Migration: ensure helpers exist and include a valid primary helper
         const isValidHelper = (h: unknown): h is HelperRobot => {
           if (!isRecord(h)) return false;
@@ -831,31 +423,6 @@ export function useGameState() {
         (parsed.bagItems as InventoryItem[]).forEach(normalizeItemArrays);
         setBagItems(parsed.bagItems);
 
-        // Migration: ensure junkyardSeed exists
-        if (typeof parsed.junkyardSeed !== 'number') {
-          parsed.junkyardSeed = parsed.junkyard?.seed ?? Date.now();
-        }
-
-        // Migration: ensure junkyard piles have requiredTurns
-        if (parsed.junkyard?.piles) {
-          parsed.junkyard.piles = parsed.junkyard.piles.map((pile: JunkPile) => ({
-            ...pile,
-            requiredTurns: pile.requiredTurns ?? (1 + Math.floor(Math.random() * 5)),
-          }));
-        }
-
-        // Migration: ensure junkyard enemies array exists
-        if (parsed.junkyard && !Array.isArray(parsed.junkyard.enemies)) {
-          parsed.junkyard.enemies = [];
-        }
-
-        // Migration: deserialize infiniteJunkyard chunks from object to Map
-        if (parsed.infiniteJunkyard && parsed.infiniteJunkyard.chunks) {
-          // Check if chunks is not already a Map (loaded from localStorage as object)
-          if (!(parsed.infiniteJunkyard.chunks instanceof Map)) {
-            parsed.infiniteJunkyard = deserializeInfiniteJunkyard(parsed.infiniteJunkyard);
-          }
-        }
 
         setGameState(parsed);
       } catch (err) {
@@ -865,18 +432,14 @@ export function useGameState() {
         setBagItems([]);
         setGameState({
           player: createInitialPlayerState(),
-          infiniteJunkyard: null,
           junkyard: null,
-          junkyardSeed: Date.now(),
           turnCount: 0,
         });
       }
     } else {
       setGameState({
         player: createInitialPlayerState(),
-        infiniteJunkyard: null,
         junkyard: null,
-        junkyardSeed: Date.now(),
         turnCount: 0,
       });
     }
@@ -886,61 +449,10 @@ export function useGameState() {
   // Save game state
   useEffect(() => {
     if (gameState && !isLoading) {
-      // Serialize infiniteJunkyard's Map to plain object for localStorage
-      const saveData = {
-        ...gameState,
-        infiniteJunkyard: gameState.infiniteJunkyard 
-          ? serializeInfiniteJunkyard(gameState.infiniteJunkyard)
-          : null,
-        bagItems,
-      };
-      try {
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
-      } catch (err) {
-        console.error('Failed to persist save data (storage quota/blocked?).', err);
-      }
+      const saveData = { ...gameState, bagItems };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(saveData));
     }
   }, [gameState, bagItems, isLoading]);
-
-  // Passive base recharge timer - only when at base (not in junkyard)
-  useEffect(() => {
-    if (!gameState || isLoading) return;
-    
-    // Only recharge when at base (no currentYardId means at base)
-    const isAtBase = !gameState.player.currentYardId;
-    if (!isAtBase) return;
-    
-    const primary = getPrimaryHelper(gameState.player);
-    if (!primary) return;
-    
-    const maxCharge = getMaxBatteryCapacity(primary);
-    if (gameState.player.currentCharge >= maxCharge) return;
-    
-    // Get recharge rate from upgrade (default 300s = 5 min, min 60s = 1 min)
-    const upgradeLevel = gameState.player.baseUpgrades.baseRechargeRate || 0;
-    const rechargeIntervalSeconds = 300 - (upgradeLevel * 60); // 300, 240, 180, 120, 60
-    
-    const intervalId = setInterval(() => {
-      setGameState(prev => {
-        if (!prev) return prev;
-        const primaryHelper = getPrimaryHelper(prev.player);
-        if (!primaryHelper) return prev;
-        
-        const max = getMaxBatteryCapacity(primaryHelper);
-        if (prev.player.currentCharge >= max) return prev;
-        
-        return {
-          ...prev,
-          player: {
-            ...prev.player,
-            currentCharge: Math.min(prev.player.currentCharge + 1, max),
-          },
-        };
-      });
-    }, rechargeIntervalSeconds * 1000);
-    
-    return () => clearInterval(intervalId);
-  }, [gameState?.player.currentYardId, gameState?.player.baseUpgrades.baseRechargeRate, gameState?.player.currentCharge, isLoading]);
 
   // Get current bag dimensions from primary helper
   const getCurrentBag = useCallback((): Bag => {
@@ -959,33 +471,32 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      let infiniteJunkyard = prev.infiniteJunkyard;
+      let junkyard = prev.junkyard;
+      let playerX = prev.player.playerX;
+      let playerY = prev.player.playerY;
       
-      if (!infiniteJunkyard) {
-        // Use the stored seed for the junkyard
-        const seed = prev.junkyardSeed;
-        infiniteJunkyard = createInfiniteJunkyard(seed, prev.player.currency);
+      if (!junkyard) {
+        const seed = Date.now();
+        junkyard = generateJunkyard(seed);
+        junkyard = attachStoryItemIfLucky(junkyard, prev.player.storyProgress, prev.player.completedStorylines);
+        playerX = 0;
+        playerY = 0;
       }
+
       
-      // Always start at entrance when entering/re-entering
-      const playerX = infiniteJunkyard.entranceX;
-      const playerY = infiniteJunkyard.entranceY;
-      
-      // Reveal tiles around player position
-      infiniteJunkyard = revealTilesAroundWorld(infiniteJunkyard, playerX, playerY, REVEAL_RADIUS, prev.player.currency);
+      junkyard = revealTilesAround(junkyard, playerX, playerY);
       
       return {
         ...prev,
-        infiniteJunkyard,
-        junkyard: null, // Clear legacy junkyard
-        player: { ...prev.player, currentYardId: infiniteJunkyard.yardId, playerX, playerY },
+        junkyard,
+        player: { ...prev.player, currentYardId: junkyard.yardId, playerX, playerY },
       };
     });
   }, []);
 
   const movePlayer = useCallback((dx: number, dy: number) => {
     setGameState(prev => {
-      if (!prev || !prev.infiniteJunkyard) return prev;
+      if (!prev || !prev.junkyard) return prev;
       
       const newX = prev.player.playerX + dx;
       const newY = prev.player.playerY + dy;
@@ -1025,164 +536,72 @@ export function useGameState() {
         return prev;
       }
       
-      // Ensure target chunk is generated
-      let updatedJunkyard = prev.infiniteJunkyard;
-      const targetChunkCoord = worldToChunk(newX, newY, CHUNK_WIDTH, CHUNK_HEIGHT);
-      const { junkyard: withTargetChunk } = getOrGenerateChunk(
-        updatedJunkyard,
-        targetChunkCoord.chunkX,
-        targetChunkCoord.chunkY,
-        prev.player.currency
-      );
-      updatedJunkyard = withTargetChunk;
-      
-      // Check passability using world coordinates
-      const isPassable = isWorldTilePassable(updatedJunkyard, newX, newY);
-      
-      // Spider legs can walk over walls
-      const wallAtDest = getWorldWallAt(updatedJunkyard, newX, newY);
-      const hasSpiderLegs = mobilityName.includes('spider');
-      
-      if (!isPassable && !(hasSpiderLegs && wallAtDest)) {
-        return prev;
+      // Check destination is passable (jump can skip intermediate tiles)
+      if (!isTilePassable(prev.junkyard, newX, newY)) {
+        // Spider legs can traverse walls at 2x battery cost
+        if (mobilityName.includes('spider')) {
+          // Allow wall traversal but we'll add extra cost later
+        } else {
+          return prev;
+        }
       }
       
-      // Check for barriers
-      const barrierAtDest = getWorldBarrierAt(updatedJunkyard, newX, newY);
-      if (barrierAtDest && !barrierAtDest.isPassable) {
-        return prev;
-      }
-      
-      // Calculate battery cost
+      // Calculate base battery cost
       let batteryCost = 1;
       
-      // Check for terrain effects using world coordinates
-      const destinationTerrain = getWorldTerrainAt(updatedJunkyard, newX, newY);
-      let updatedBagItems = bagItems;
+      // Check terrain at destination
+      const destinationTerrain = getTerrainAt(prev.junkyard, newX, newY);
+      let updatedJunkyard = revealTilesAround(prev.junkyard, newX, newY);
+      let updatedBagItems = [...bagItems];
       
-      // Show terrain notification
+      // Apply terrain effects
       if (destinationTerrain && movementType !== 'jump') {
-        setLastTerrainType(destinationTerrain);
-      } else {
-        setLastTerrainType(null);
-      }
-      
-      if (destinationTerrain && movementType !== 'jump') {
+        // Jump jets skip over hazards entirely
         switch (destinationTerrain.type) {
           case 'mud':
-            if (!mobilityName.includes('tread') && !mobilityName.includes('track')) {
+            // Costs 2 battery unless you have treads
+            if (!mobilityName.includes('tread')) {
               batteryCost = 2;
             }
             break;
           case 'toxic':
+            // Damage items in bag (reduce condition by 5)
             updatedBagItems = bagItems.map(item => ({
               ...item,
               condition: Math.max(0, item.condition - 5),
             }));
             break;
           case 'electric':
+            // Drains 3 battery (could add insulated wheels later)
             batteryCost = 3;
             break;
           case 'oil':
-          case 'oil_slick':
+            // Slide effect handled separately after move
+            // Racing wheels slide further (handled in slide logic)
             break;
           case 'magnetic':
-          case 'magnetic_floor':
+            // Weight penalty handled elsewhere (inventory checks)
             break;
           case 'fog':
-          case 'cooling_fog':
-            // Reveal only 1 tile around - handled after move
-            break;
-          case 'irradiated':
-            batteryCost = 2;
-            break;
-          case 'cooling_trench':
-            batteryCost = 2;
-            break;
-          case 'cratered':
-            break;
-          case 'cable_sprawl':
-            if (!mobilityName.includes('cable')) {
-              batteryCost = 2;
-            }
-            break;
-          case 'broken_pavement':
-            break;
-          case 'neon_pool':
-            batteryCost = 2;
-            break;
-          case 'assembly_line':
-            break;
-          case 'collapsed_catwalk':
-            batteryCost = 2;
-            break;
-          case 'organic_sludge':
-            batteryCost = 2;
-            break;
-          case 'flesh_mound':
-            break;
-          case 'drainage':
-            break;
-          case 'server_rack':
-            break;
-        }
-      }
-      
-      // Apply component damage from terrain
-      let updatedHelpers = [...prev.player.helpers];
-      let componentDamageMessage = '';
-      
-      if (destinationTerrain && movementType !== 'jump') {
-        const terrainConfig = TERRAIN_EFFECTS[destinationTerrain.type];
-        
-        if (terrainConfig?.damagesMobility && primary && mobility) {
-          const newCondition = Math.max(0, mobility.condition - terrainConfig.damagesMobility);
-          const updatedMobility = { ...mobility, condition: newCondition };
-          
-          updatedHelpers = updatedHelpers.map(h => 
-            h.id === primary.id 
-              ? { ...h, components: { ...h.components, mobility: updatedMobility } }
-              : h
-          );
-          
-          if (newCondition === 0) {
-            componentDamageMessage = `${mobility.name} is now BROKEN!`;
-          } else if (newCondition < 20) {
-            componentDamageMessage = `${mobility.name} critically damaged (${newCondition}%)`;
-          }
-        }
-        
-        if (terrainConfig?.damagesFrame && primary) {
-          const damageToBattery = primary.components.battery 
-            ? { ...primary.components.battery, condition: Math.max(0, primary.components.battery.condition - terrainConfig.damagesFrame) }
-            : null;
-          const damageToMobility = primary.components.mobility
-            ? { ...primary.components.mobility, condition: Math.max(0, primary.components.mobility.condition - terrainConfig.damagesFrame) }
-            : null;
-          const damageToModules = primary.components.modules.map(m => 
-            m ? { ...m, condition: Math.max(0, m.condition - terrainConfig.damagesFrame) } : m
-          );
-          
-          updatedHelpers = updatedHelpers.map(h => 
-            h.id === primary.id 
-              ? { 
-                  ...h, 
-                  components: { 
-                    ...h.components, 
-                    mobility: damageToMobility,
-                    battery: damageToBattery,
-                    modules: damageToModules,
-                  } 
+            // Reduced reveal radius - reveal only 1 tile around
+            const newRevealed = updatedJunkyard.revealedTiles.map(row => [...row]);
+            for (let ddy = -1; ddy <= 1; ddy++) {
+              for (let ddx = -1; ddx <= 1; ddx++) {
+                const nx = newX + ddx;
+                const ny = newY + ddy;
+                if (nx >= 0 && nx < updatedJunkyard.width && ny >= 0 && ny < updatedJunkyard.height) {
+                  newRevealed[ny][nx] = true;
                 }
-              : h
-          );
-          
-          componentDamageMessage = 'All components took radiation damage!';
+              }
+            }
+            updatedJunkyard = { ...updatedJunkyard, revealedTiles: newRevealed };
+            break;
         }
       }
       
       // Spider legs wall traversal costs 2x
-      if (wallAtDest && hasSpiderLegs) {
+      const wallAtDest = prev.junkyard.walls.some(w => w.x === newX && w.y === newY);
+      if (wallAtDest && mobilityName.includes('spider')) {
         batteryCost = batteryCost * 2;
       }
       
@@ -1191,21 +610,9 @@ export function useGameState() {
         return prev;
       }
       
-      // Check if mobility is broken (condition 0)
-      const primaryHelper = updatedHelpers.find(h => h.isPrimary);
-      const mobilityCondition = primaryHelper?.components.mobility?.condition ?? 100;
-      if (mobilityCondition === 0) {
-        componentDamageMessage = 'Mobility broken! Return to base for repairs!';
-      }
-      
       // Update bag items if toxic damage occurred
       if (updatedBagItems !== bagItems) {
         setBagItems(updatedBagItems);
-      }
-      
-      // Store component damage message for display
-      if (componentDamageMessage && destinationTerrain) {
-        setLastTerrainType({ ...destinationTerrain, name: componentDamageMessage });
       }
       
       let finalX = newX;
@@ -1220,177 +627,38 @@ export function useGameState() {
         for (let s = 1; s <= slideDistance; s++) {
           const slideX = newX + dirX * s;
           const slideY = newY + dirY * s;
-          if (isWorldTilePassable(updatedJunkyard, slideX, slideY)) {
+          if (isTilePassable(prev.junkyard, slideX, slideY)) {
             finalX = slideX;
             finalY = slideY;
             // Reveal tiles along slide path
-            updatedJunkyard = revealTilesAroundWorld(updatedJunkyard, slideX, slideY, REVEAL_RADIUS, prev.player.currency);
+            updatedJunkyard = revealTilesAround(updatedJunkyard, slideX, slideY);
           } else {
             break;
           }
         }
       }
       
-      // Reveal tiles around final position (respecting fog terrain)
-      const revealRadius = (destinationTerrain?.type === 'fog' || destinationTerrain?.type === 'cooling_fog') ? 1 : REVEAL_RADIUS;
-      updatedJunkyard = revealTilesAroundWorld(updatedJunkyard, finalX, finalY, revealRadius, prev.player.currency);
-      
       const newTurnCount = prev.turnCount + 1;
       let newCharge = prev.player.currentCharge - batteryCost;
       
       // Solar panel regeneration
-      const updatedPrimary = updatedHelpers.find(h => h.isPrimary);
-      if (updatedPrimary) {
-        const solarRate = getSolarRegenRate(updatedPrimary);
+      if (primary) {
+        const solarRate = getSolarRegenRate(primary);
         if (solarRate !== null) {
-          const maxCapacity = getMaxBatteryCapacity(updatedPrimary);
+          const maxCapacity = getMaxBatteryCapacity(primary);
           const regenAmount = calculateSolarRegen(newTurnCount, solarRate, maxCapacity, newCharge);
           newCharge = Math.min(maxCapacity, newCharge + regenAmount);
         }
       }
       
-      // Process enemies in the current chunk
-      const { chunkX, chunkY } = worldToChunk(finalX, finalY, CHUNK_WIDTH, CHUNK_HEIGHT);
-      const { localX: playerLocalX, localY: playerLocalY } = worldToLocal(finalX, finalY, CHUNK_WIDTH, CHUNK_HEIGHT);
-      const currentChunk = getChunkSafe(updatedJunkyard, makeChunkKey(chunkX, chunkY));
-      
-      let enemyEncounter: Enemy | null = null;
-      
-      if (currentChunk && currentChunk.enemies && currentChunk.enemies.length > 0) {
-        // Scare away glow rats the player stepped on
-        const scaredEnemies = scareGlowRats(currentChunk.enemies, playerLocalX, playerLocalY, {
-          yardId: updatedJunkyard.yardId,
-          seed: currentChunk.seed,
-          biomeId: updatedJunkyard.biomeId,
-          width: CHUNK_WIDTH,
-          height: CHUNK_HEIGHT,
-          revealedTiles: currentChunk.revealedTiles,
-          piles: currentChunk.piles,
-          walls: currentChunk.walls,
-          terrain: currentChunk.terrain,
-          barriers: currentChunk.barriers,
-          droppedItems: currentChunk.droppedItems,
-          enemies: currentChunk.enemies,
-        });
-        
-        // Create a temporary legacy junkyard structure for enemy AI
-        const tempJunkyard: Junkyard = {
-          yardId: updatedJunkyard.yardId,
-          seed: currentChunk.seed,
-          biomeId: updatedJunkyard.biomeId,
-          width: CHUNK_WIDTH,
-          height: CHUNK_HEIGHT,
-          revealedTiles: currentChunk.revealedTiles,
-          piles: currentChunk.piles,
-          walls: currentChunk.walls,
-          terrain: currentChunk.terrain,
-          barriers: currentChunk.barriers,
-          droppedItems: currentChunk.droppedItems,
-          enemies: scaredEnemies,
-        };
-        
-        const { updatedEnemies, playerCollision, updatedPiles } = processEnemyTurns(
-          tempJunkyard,
-          playerLocalX,
-          playerLocalY
-        );
-        
-        // Update chunk with new enemy positions and eaten piles
-        const updatedChunk = { ...currentChunk, enemies: updatedEnemies, piles: updatedPiles };
-        updatedJunkyard = setChunkSafe(updatedJunkyard, makeChunkKey(chunkX, chunkY), updatedChunk);
-        
-        enemyEncounter = playerCollision;
-        
-        // Check for adjacent enemies
-        const adjacentEnemies = getAdjacentEnemies(updatedEnemies, playerLocalX, playerLocalY);
-        const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
-        let totalHelperDamage = 0;
-        let totalItemDamage = 0;
-        
-        if (adjacentEnemies.length > 0) {
-          for (const enemy of adjacentEnemies) {
-            const def = getEnemyDefinition(enemy.definitionId);
-            if (!def) continue;
-            
-            const effects = getAdjacencyEffects(def, enemy.turnsStationary);
-            
-            if (effects.batteryDrain > 0) {
-              newCharge = Math.max(0, newCharge - effects.batteryDrain);
-              adjacencyDrainInfo.push({ definition: def, batteryDrain: effects.batteryDrain });
-            }
-            
-            totalHelperDamage += effects.helperDamage || 0;
-            totalItemDamage += effects.itemDamage || 0;
-          }
-          
-          if (adjacencyDrainInfo.length > 0) {
-            setTimeout(() => {
-              showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
-            }, 0);
-          }
-        }
-        
-        // Handle direct collision with enemy
-        if (enemyEncounter) {
-          const def = getEnemyDefinition(enemyEncounter.definitionId);
-          if (def) {
-            const collisionEffects = getCollisionEffects(def);
-            
-            newCharge = Math.max(0, newCharge - (collisionEffects.batteryDrain || 0));
-            totalHelperDamage += collisionEffects.helperDamage || 0;
-            totalItemDamage += collisionEffects.itemDamage || 0;
-            
-            setTimeout(() => {
-              showEnemyEncounterToast(collisionEffects);
-            }, 0);
-            
-            if (collisionEffects.forcedReturn) {
-              newCharge = 0;
-            }
-          }
-        }
-        
-        // Apply accumulated helper damage
-        if (totalHelperDamage > 0 && updatedPrimary) {
-          updatedHelpers = updatedHelpers.map(h => {
-            if (!h.isPrimary) return h;
-            return {
-              ...h,
-              components: {
-                ...h.components,
-                battery: h.components.battery 
-                  ? { ...h.components.battery, condition: Math.max(0, h.components.battery.condition - totalHelperDamage) }
-                  : null,
-                mobility: h.components.mobility
-                  ? { ...h.components.mobility, condition: Math.max(0, h.components.mobility.condition - totalHelperDamage) }
-                  : null,
-                modules: h.components.modules.map(m => 
-                  m ? { ...m, condition: Math.max(0, m.condition - totalHelperDamage) } : m
-                ),
-              },
-            };
-          });
-        }
-        
-        // Apply accumulated item damage to bag
-        if (totalItemDamage > 0) {
-          updatedBagItems = updatedBagItems.map(item => ({
-            ...item,
-            condition: Math.max(0, item.condition - totalItemDamage),
-          }));
-          setBagItems(updatedBagItems);
-        }
-      }
-      
       return {
         ...prev,
-        infiniteJunkyard: updatedJunkyard,
-        player: {
+        junkyard: updatedJunkyard,
+        player: { 
           ...prev.player, 
           playerX: finalX, 
           playerY: finalY,
           currentCharge: newCharge,
-          helpers: updatedHelpers,
         },
         turnCount: newTurnCount,
       };
@@ -1398,74 +666,40 @@ export function useGameState() {
   }, [bagItems]);
 
   const getCurrentPile = useCallback((): JunkPile | null => {
-    if (!gameState?.infiniteJunkyard) return null;
+    if (!gameState?.junkyard) return null;
     
-    const { chunkX, chunkY } = worldToChunk(
-      gameState.player.playerX,
-      gameState.player.playerY,
-      CHUNK_WIDTH,
-      CHUNK_HEIGHT
-    );
-    const { localX, localY } = worldToLocal(
-      gameState.player.playerX,
-      gameState.player.playerY,
-      CHUNK_WIDTH,
-      CHUNK_HEIGHT
-    );
-    
-    const chunk = getChunkSafe(gameState.infiniteJunkyard, makeChunkKey(chunkX, chunkY));
-    if (!chunk) return null;
-    
-    return chunk.piles.find(
-      p => p.x === localX && p.y === localY && !p.isDepleted
+    return gameState.junkyard.piles.find(
+      p => p.x === gameState.player.playerX && 
+           p.y === gameState.player.playerY && 
+           !p.isDepleted
     ) || null;
   }, [gameState]);
 
   const searchPile = useCallback(() => {
     setGameState(prev => {
-      if (!prev || !prev.infiniteJunkyard) return prev;
+      if (!prev || !prev.junkyard) return prev;
       
       // Check battery
       if (prev.player.currentCharge <= 0) {
         return prev;
       }
       
-      const { chunkX, chunkY } = worldToChunk(
-        prev.player.playerX,
-        prev.player.playerY,
-        CHUNK_WIDTH,
-        CHUNK_HEIGHT
-      );
-      const { localX, localY } = worldToLocal(
-        prev.player.playerX,
-        prev.player.playerY,
-        CHUNK_WIDTH,
-        CHUNK_HEIGHT
-      );
-      
-      const chunkKey = makeChunkKey(chunkX, chunkY);
-      const chunk = getChunkSafe(prev.infiniteJunkyard, chunkKey);
-      if (!chunk) return prev;
-      
-      const pileIndex = chunk.piles.findIndex(
-        p => p.x === localX && p.y === localY && !p.isDepleted
+      const pileIndex = prev.junkyard.piles.findIndex(
+        p => p.x === prev.player.playerX && 
+             p.y === prev.player.playerY && 
+             !p.isDepleted
       );
       
       if (pileIndex === -1) return prev;
       
-      const pile = chunk.piles[pileIndex];
+      const pile = prev.junkyard.piles[pileIndex];
       const newProgress = pile.progressTurns + 1;
       
-      const updatedPiles = [...chunk.piles];
-      let updatedJunkyard = prev.infiniteJunkyard;
+      const updatedPiles = [...prev.junkyard.piles];
       
-      if (newProgress >= pile.requiredTurns) {
-        // Generate loot with deterministic seed matching preview
-        // Use world coordinates so seed is unique across all chunks
-        const pileWorldX = chunkX * CHUNK_WIDTH + pile.x;
-        const pileWorldY = chunkY * CHUNK_HEIGHT + pile.y;
-        const pileSeed = prev.infiniteJunkyard.baseSeed + pileWorldX * 1000 + pileWorldY;
-        const loot = generateLootForChunk(pileSeed, chunkX, chunkY);
+      if (newProgress >= SEARCH_TURNS_REQUIRED) {
+        // Generate loot
+        const loot = generateLoot(Date.now() + pileIndex);
         updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress, isDepleted: true };
         
         // Get current bag
@@ -1474,9 +708,8 @@ export function useGameState() {
         
         // Try to add items to bag
         let newBagItems = [...bagItems];
-        let currentWeight = newBagItems.reduce((sum, i) => sum + i.weight, 0);
+        const currentWeight = newBagItems.reduce((sum, i) => sum + i.weight, 0);
         const bag = { ...baseBag, items: newBagItems };
-        const collectedItems: Item[] = [];
         
         for (const item of loot) {
           if (currentWeight + item.weight <= bag.maxWeight) {
@@ -1490,14 +723,11 @@ export function useGameState() {
               };
               newBagItems.push(invItem);
               bag.items = newBagItems;
-              currentWeight += item.weight;
-              collectedItems.push(item);
             }
           }
         }
         
         setBagItems(newBagItems);
-        setFoundItems(collectedItems);
         
         const newTurnCount = prev.turnCount + 1;
         let newCharge = prev.player.currentCharge - 1;
@@ -1512,64 +742,27 @@ export function useGameState() {
           }
         }
         
-        // Update chunk with new pile state
-        const updatedChunk = { ...chunk, piles: updatedPiles };
-        
-        // Process enemy turns in this chunk
-        if (updatedChunk.enemies && updatedChunk.enemies.length > 0) {
-          const tempJunkyard: Junkyard = {
-            yardId: updatedJunkyard.yardId,
-            seed: updatedChunk.seed,
-            biomeId: updatedJunkyard.biomeId,
-            width: CHUNK_WIDTH,
-            height: CHUNK_HEIGHT,
-            revealedTiles: updatedChunk.revealedTiles,
-            piles: updatedChunk.piles,
-            walls: updatedChunk.walls,
-            terrain: updatedChunk.terrain,
-            barriers: updatedChunk.barriers,
-            droppedItems: updatedChunk.droppedItems,
-            enemies: updatedChunk.enemies,
-          };
-          
-          const { updatedEnemies, updatedPiles } = processEnemyTurns(tempJunkyard, localX, localY);
-          updatedChunk.enemies = updatedEnemies;
-          updatedChunk.piles = updatedPiles;
-          
-          // Check for adjacent enemies
-          const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
-          const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
-          
-          for (const enemy of adjacentEnemies) {
-            const def = getEnemyDefinition(enemy.definitionId);
-            if (!def) continue;
-            
-            const effects = getAdjacencyEffects(def, enemy.turnsStationary);
-            if (effects.batteryDrain > 0) {
-              newCharge = Math.max(0, newCharge - effects.batteryDrain);
-              adjacencyDrainInfo.push({ definition: def, batteryDrain: effects.batteryDrain });
-            }
-          }
-          
-          if (adjacencyDrainInfo.length > 0) {
-            setTimeout(() => {
-              showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
-            }, 0);
-          }
+        // Deliver pending story item, if any, straight to stash (so it can't
+        // be lost to a full bag), and mark it delivered on the junkyard.
+        let newStash = prev.player.stash;
+        let updatedYard = { ...prev.junkyard, piles: updatedPiles };
+        if (prev.junkyard.pendingStoryItem) {
+          const { storylineId, stepIndex } = prev.junkyard.pendingStoryItem;
+          newStash = [...newStash, createStoryItem(storylineId, stepIndex)];
+          updatedYard = { ...updatedYard, pendingStoryItem: null };
         }
-        
-        // Update chunks
-        updatedJunkyard = setChunkSafe(updatedJunkyard, chunkKey, updatedChunk);
         
         return {
           ...prev,
-          infiniteJunkyard: updatedJunkyard,
+          junkyard: updatedYard,
           player: { 
             ...prev.player, 
+            stash: newStash,
             currentCharge: newCharge,
           },
           turnCount: newTurnCount,
         };
+
       } else {
         updatedPiles[pileIndex] = { ...pile, progressTurns: newProgress };
         
@@ -1587,58 +780,9 @@ export function useGameState() {
           }
         }
         
-        // Update chunk with new pile state
-        const updatedChunk = { ...chunk, piles: updatedPiles };
-        
-        // Process enemy turns in this chunk
-        if (updatedChunk.enemies && updatedChunk.enemies.length > 0) {
-          const tempJunkyard: Junkyard = {
-            yardId: updatedJunkyard.yardId,
-            seed: updatedChunk.seed,
-            biomeId: updatedJunkyard.biomeId,
-            width: CHUNK_WIDTH,
-            height: CHUNK_HEIGHT,
-            revealedTiles: updatedChunk.revealedTiles,
-            piles: updatedChunk.piles,
-            walls: updatedChunk.walls,
-            terrain: updatedChunk.terrain,
-            barriers: updatedChunk.barriers,
-            droppedItems: updatedChunk.droppedItems,
-            enemies: updatedChunk.enemies,
-          };
-          
-          const { updatedEnemies, updatedPiles: updatedPiles2 } = processEnemyTurns(tempJunkyard, localX, localY);
-          updatedChunk.enemies = updatedEnemies;
-          updatedChunk.piles = updatedPiles2;
-          
-          // Check for adjacent enemies
-          const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
-          const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
-          
-          for (const enemy of adjacentEnemies) {
-            const def = getEnemyDefinition(enemy.definitionId);
-            if (!def) continue;
-            
-            const effects = getAdjacencyEffects(def, enemy.turnsStationary);
-            if (effects.batteryDrain > 0) {
-              newCharge = Math.max(0, newCharge - effects.batteryDrain);
-              adjacencyDrainInfo.push({ definition: def, batteryDrain: effects.batteryDrain });
-            }
-          }
-          
-          if (adjacencyDrainInfo.length > 0) {
-            setTimeout(() => {
-              showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
-            }, 0);
-          }
-        }
-        
-        // Update chunks
-        updatedJunkyard = setChunkSafe(updatedJunkyard, chunkKey, updatedChunk);
-        
         return {
           ...prev,
-          infiniteJunkyard: updatedJunkyard,
+          junkyard: { ...prev.junkyard, piles: updatedPiles },
           player: { 
             ...prev.player, 
             currentCharge: newCharge,
@@ -1648,127 +792,6 @@ export function useGameState() {
       }
     });
   }, [bagItems]);
-
-  // Wait one turn without moving - processes enemy turns and costs 1 battery
-  const waitTurn = useCallback(() => {
-    setGameState(prev => {
-      if (!prev || !prev.infiniteJunkyard) return prev;
-      
-      // Check battery
-      if (prev.player.currentCharge <= 0) {
-        return prev;
-      }
-      
-      const { chunkX, chunkY } = worldToChunk(
-        prev.player.playerX,
-        prev.player.playerY,
-        CHUNK_WIDTH,
-        CHUNK_HEIGHT
-      );
-      const { localX, localY } = worldToLocal(
-        prev.player.playerX,
-        prev.player.playerY,
-        CHUNK_WIDTH,
-        CHUNK_HEIGHT
-      );
-      
-      const chunkKey = makeChunkKey(chunkX, chunkY);
-      const chunk = getChunkSafe(prev.infiniteJunkyard, chunkKey);
-      if (!chunk) return prev;
-      
-      let updatedJunkyard = prev.infiniteJunkyard;
-      const updatedChunk = { ...chunk };
-      
-      const newTurnCount = prev.turnCount + 1;
-      let newCharge = prev.player.currentCharge - 1;
-      
-      // Solar panel regeneration
-      const primary = getPrimaryHelper(prev.player);
-      if (primary) {
-        const solarRate = getSolarRegenRate(primary);
-        if (solarRate !== null) {
-          const maxCapacity = getMaxBatteryCapacity(primary);
-          const regenAmount = calculateSolarRegen(newTurnCount, solarRate, maxCapacity, newCharge);
-          newCharge = Math.min(maxCapacity, newCharge + regenAmount);
-        }
-      }
-      
-      // Process enemy turns in this chunk
-      if (updatedChunk.enemies && updatedChunk.enemies.length > 0) {
-        const tempJunkyard: Junkyard = {
-          yardId: updatedJunkyard.yardId,
-          seed: updatedChunk.seed,
-          biomeId: updatedJunkyard.biomeId,
-          width: CHUNK_WIDTH,
-          height: CHUNK_HEIGHT,
-          revealedTiles: updatedChunk.revealedTiles,
-          piles: updatedChunk.piles,
-          walls: updatedChunk.walls,
-          terrain: updatedChunk.terrain,
-          barriers: updatedChunk.barriers,
-          droppedItems: updatedChunk.droppedItems,
-          enemies: updatedChunk.enemies,
-        };
-        
-        const { updatedEnemies, playerCollision, updatedPiles: waitPiles } = processEnemyTurns(tempJunkyard, localX, localY);
-        updatedChunk.enemies = updatedEnemies;
-        updatedChunk.piles = waitPiles;
-        
-        // Check for adjacent enemies
-        const adjacentEnemies = getAdjacentEnemies(updatedEnemies, localX, localY);
-        const adjacencyDrainInfo: { definition: ReturnType<typeof getEnemyDefinition>; batteryDrain: number }[] = [];
-        
-        for (const enemy of adjacentEnemies) {
-          const def = getEnemyDefinition(enemy.definitionId);
-          if (!def) continue;
-          
-          const effects = getAdjacencyEffects(def, enemy.turnsStationary);
-          if (effects.batteryDrain > 0) {
-            newCharge = Math.max(0, newCharge - effects.batteryDrain);
-            adjacencyDrainInfo.push({ definition: def, batteryDrain: effects.batteryDrain });
-          }
-        }
-        
-        if (adjacencyDrainInfo.length > 0) {
-          setTimeout(() => {
-            showAdjacencyWarningToast(adjacencyDrainInfo.filter(e => e.definition) as { definition: NonNullable<typeof adjacencyDrainInfo[0]['definition']>; batteryDrain: number }[]);
-          }, 0);
-        }
-        
-        // Handle collision
-        if (playerCollision) {
-          const def = getEnemyDefinition(playerCollision.definitionId);
-          if (def) {
-            const collisionEffects = getCollisionEffects(def);
-            newCharge = Math.max(0, newCharge - (collisionEffects.batteryDrain || 0));
-            
-            setTimeout(() => {
-              showEnemyEncounterToast(collisionEffects);
-            }, 0);
-          }
-        }
-      }
-      
-      // Update chunks
-      updatedJunkyard = setChunkSafe(updatedJunkyard, chunkKey, updatedChunk);
-      
-      toast({
-        title: "⏳ Waiting...",
-        description: "You pass the time cautiously.",
-        duration: 1500,
-      });
-      
-      return {
-        ...prev,
-        infiniteJunkyard: updatedJunkyard,
-        player: { 
-          ...prev.player, 
-          currentCharge: newCharge,
-        },
-        turnCount: newTurnCount,
-      };
-    });
-  }, []);
 
   // Calculate charging cost based on charger efficiency upgrade
   const getChargingCost = useCallback((chargeNeeded: number, chargerLevel: number): number => {
@@ -1783,12 +806,91 @@ export function useGameState() {
       const primary = getPrimaryHelper(prev.player);
       const maxCapacity = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
       
+      // ---- Process any story items in stash: advance progress, queue emails, apply rewards ----
+      let stash = [...prev.player.stash];
+      const storyProgress: Record<string, number> = { ...(prev.player.storyProgress || {}) };
+      const completedStorylines: string[] = [...(prev.player.completedStorylines || [])];
+      const pendingEmails: StoryEmail[] = [...(prev.player.pendingEmails || [])];
+      let bonusCurrency = 0;
+      const grantedUpgrades: Partial<Record<keyof typeof prev.player.baseUpgrades, number>> = {};
+      const grantedStashItems: Item[] = [];
+      
+      // Group story items by storyline, sorted by step
+      const storyItemsInStash = stash.filter(i => typeof i.storylineId === 'string' && typeof i.storyStepIndex === 'number');
+      stash = stash.filter(i => !(typeof i.storylineId === 'string' && typeof i.storyStepIndex === 'number'));
+      storyItemsInStash.sort((a, b) => (a.storyStepIndex! - b.storyStepIndex!));
+      
+      for (const storyItem of storyItemsInStash) {
+        const storyline = STORYLINES.find(s => s.id === storyItem.storylineId);
+        if (!storyline) continue;
+        const step = storyline.steps[storyItem.storyStepIndex!];
+        if (!step) continue;
+        
+        // Advance progress to at least stepIndex+1
+        const current = storyProgress[storyline.id] ?? 0;
+        const advancedTo = Math.max(current, storyItem.storyStepIndex! + 1);
+        storyProgress[storyline.id] = advancedTo;
+        
+        // Queue the email for this step
+        pendingEmails.push({
+          id: uuidv4(),
+          from: step.emailFrom,
+          subject: step.emailSubject,
+          body: step.emailBody,
+          storylineId: storyline.id,
+          stepIndex: storyItem.storyStepIndex!,
+          receivedAt: Date.now(),
+        });
+        
+        // If we just completed the storyline, queue reward email + apply reward
+        if (advancedTo >= storyline.steps.length && !completedStorylines.includes(storyline.id)) {
+          completedStorylines.push(storyline.id);
+          pendingEmails.push({
+            id: uuidv4(),
+            from: storyline.rewardEmail.from,
+            subject: storyline.rewardEmail.subject,
+            body: storyline.rewardEmail.body,
+            storylineId: storyline.id,
+            stepIndex: -1,
+            receivedAt: Date.now() + 1,
+          });
+          
+          const reward = storyline.reward;
+          if (reward.type === 'currency') {
+            bonusCurrency += reward.amount;
+          } else if (reward.type === 'upgrade') {
+            grantedUpgrades[reward.upgradeId] = (grantedUpgrades[reward.upgradeId] || 0) + reward.levels;
+          } else if (reward.type === 'module') {
+            grantedStashItems.push({ ...reward.item, id: uuidv4() });
+          }
+        }
+      }
+      
+      // Apply granted upgrades (capped at maxLevel)
+      const newBaseUpgrades = { ...prev.player.baseUpgrades };
+      for (const [key, levels] of Object.entries(grantedUpgrades)) {
+        const upgrade = UPGRADES[key as keyof typeof UPGRADES];
+        if (!upgrade) continue;
+        const current = (newBaseUpgrades as any)[key] as number;
+        (newBaseUpgrades as any)[key] = Math.min(upgrade.maxLevel, current + (levels || 0));
+      }
+      stash = [...stash, ...grantedStashItems];
+      
+      const storyPlayerPatch: Partial<PlayerState> = {
+        stash,
+        storyProgress,
+        completedStorylines,
+        pendingEmails,
+        baseUpgrades: newBaseUpgrades,
+      };
+      
       if (!shouldRecharge) {
-        // Just return without recharging
         return {
           ...prev,
           player: { 
             ...prev.player, 
+            ...storyPlayerPatch,
+            currency: prev.player.currency + bonusCurrency,
             currentYardId: null,
           },
         };
@@ -1796,14 +898,13 @@ export function useGameState() {
       
       // Calculate recharge cost
       const chargeNeeded = maxCapacity - prev.player.currentCharge;
-      const chargerLevel = prev.player.baseUpgrades.chargerEfficiency ?? 0;
+      const chargerLevel = newBaseUpgrades.chargerEfficiency ?? 0;
       const chargingCost = getChargingCost(chargeNeeded, chargerLevel);
+      const totalCurrency = prev.player.currency + bonusCurrency;
       
-      // Check if player can afford it
-      if (prev.player.currency < chargingCost) {
-        // Can't afford full recharge - charge as much as possible
+      if (totalCurrency < chargingCost) {
         const costPerUnit = UPGRADES.chargerEfficiency.getValue(chargerLevel);
-        const affordableCharge = Math.floor(prev.player.currency / costPerUnit);
+        const affordableCharge = costPerUnit > 0 ? Math.floor(totalCurrency / costPerUnit) : chargeNeeded;
         const actualCharge = Math.min(affordableCharge, chargeNeeded);
         const actualCost = getChargingCost(actualCharge, chargerLevel);
         
@@ -1811,9 +912,10 @@ export function useGameState() {
           ...prev,
           player: { 
             ...prev.player, 
+            ...storyPlayerPatch,
             currentYardId: null,
             currentCharge: prev.player.currentCharge + actualCharge,
-            currency: prev.player.currency - actualCost,
+            currency: totalCurrency - actualCost,
           },
         };
       }
@@ -1822,11 +924,13 @@ export function useGameState() {
         ...prev,
         player: { 
           ...prev.player, 
+          ...storyPlayerPatch,
           currentYardId: null,
           currentCharge: maxCapacity,
-          currency: prev.player.currency - chargingCost,
+          currency: totalCurrency - chargingCost,
         },
       };
+
     });
   }, [getChargingCost]);
 
@@ -1834,20 +938,20 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      // Generate a new seed for the next junkyard (wipes and regenerates)
-      const newSeed = Date.now();
+      const seed = Date.now();
+      let junkyard = generateJunkyard(seed);
+      junkyard = attachStoryItemIfLucky(junkyard, prev.player.storyProgress, prev.player.completedStorylines);
       
       return {
         ...prev,
-        infiniteJunkyard: null, // Clear current junkyard, will be generated on enter
-        junkyard: null, // Clear legacy junkyard too
-        junkyardSeed: newSeed,
+        junkyard,
         player: { ...prev.player, playerX: 0, playerY: 0, currentYardId: null },
       };
+
     });
   }, []);
 
-  const startCleaning = useCallback((itemId: string, replaceJobId?: string) => {
+  const startCleaning = useCallback((itemId: string) => {
     setGameState(prev => {
       if (!prev) return prev;
       
@@ -1858,20 +962,7 @@ export function useGameState() {
       if (!item.isDirty) return prev;
       
       const maxSlots = 1 + prev.player.baseUpgrades.cleaningSlots;
-      let newJobs = [...prev.player.cleaningJobs];
-      let newStash = [...prev.player.stash];
-      
-      // If replacing, return the old item to stash (still dirty)
-      if (replaceJobId) {
-        const replacedJob = newJobs.find(j => j.jobId === replaceJobId);
-        if (replacedJob) {
-          newStash.push({ ...replacedJob.item, isDirty: true });
-          newJobs = newJobs.filter(j => j.jobId !== replaceJobId);
-        }
-      } else if (newJobs.length >= maxSlots) {
-        // No slot available and not replacing
-        return prev;
-      }
+      if (prev.player.cleaningJobs.length >= maxSlots) return prev;
       
       const speedMultiplier = 1 + prev.player.baseUpgrades.cleaningSpeed * 0.2;
       const duration = getCleaningDuration(item, speedMultiplier);
@@ -1884,14 +975,14 @@ export function useGameState() {
         duration,
       };
       
-      newStash = newStash.filter(i => i.id !== itemId);
+      const newStash = prev.player.stash.filter(i => i.id !== itemId);
       
       return {
         ...prev,
         player: {
           ...prev.player,
           stash: newStash,
-          cleaningJobs: [...newJobs, job],
+          cleaningJobs: [...prev.player.cleaningJobs, job],
         },
       };
     });
@@ -1929,64 +1020,27 @@ export function useGameState() {
     });
   }, []);
 
-  const calculateItemValue = (item: Item, shopPricesLevel: number): number => {
-    const rarityMult: Record<Rarity, number> = {
-      common: 1,
-      uncommon: 1.5,
-      rare: 2.5,
-      epic: 4,
-      legendary: 8,
-    };
-
-    const conditionMult = item.condition / 100;
-    const dirtyMult = item.isDirty ? 0.3 : 1;
-    const shopPriceMultiplier = UPGRADES.shopPrices.getValue(shopPricesLevel);
-
-    return Math.max(
-      1,
-      Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult * shopPriceMultiplier),
-    );
-  };
-
   const sellItem = useCallback((itemId: string) => {
     setGameState(prev => {
       if (!prev) return prev;
-
+      
       const item = prev.player.stash.find(i => i.id === itemId);
       if (!item) return prev;
-
-      const value = calculateItemValue(item, prev.player.baseUpgrades.shopPrices);
-
+      
+      const rarityMult: Record<Rarity, number> = {
+        common: 1, uncommon: 1.5, rare: 2.5, epic: 4, legendary: 8
+      };
+      const conditionMult = item.condition / 100;
+      const dirtyMult = item.isDirty ? 0.3 : 1;
+      
+      const value = Math.floor(item.baseValue * rarityMult[item.rarity] * conditionMult * dirtyMult);
+      
       return {
         ...prev,
         player: {
           ...prev.player,
           currency: prev.player.currency + value,
           stash: prev.player.stash.filter(i => i.id !== itemId),
-        },
-      };
-    });
-  }, []);
-
-  const sellMultipleItems = useCallback((itemIds: string[]) => {
-    setGameState(prev => {
-      if (!prev) return prev;
-
-      const idsSet = new Set(itemIds);
-      const itemsToSell = prev.player.stash.filter(i => idsSet.has(i.id));
-      if (itemsToSell.length === 0) return prev;
-
-      const totalValue = itemsToSell.reduce(
-        (sum, item) => sum + calculateItemValue(item, prev.player.baseUpgrades.shopPrices),
-        0,
-      );
-
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          currency: prev.player.currency + totalValue,
-          stash: prev.player.stash.filter(i => !idsSet.has(i.id)),
         },
       };
     });
@@ -2013,7 +1067,7 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      const upgrade = UPGRADES[upgradeId];
+      const upgrade = UPGRADES[upgradeId as keyof typeof UPGRADES];
       if (!upgrade) return prev;
       
       const currentLevel = prev.player.baseUpgrades[upgradeId as keyof typeof prev.player.baseUpgrades] as number;
@@ -2037,6 +1091,7 @@ export function useGameState() {
       };
     });
   }, []);
+
 
   // Install a component to a helper
   const installComponent = useCallback((helperId: string, slotType: 'mobility' | 'battery' | 'module', item: Item, moduleIndex?: number) => {
@@ -2224,127 +1279,23 @@ export function useGameState() {
     setBagItems([]);
     setGameState({
       player: createInitialPlayerState(),
-      infiniteJunkyard: null,
       junkyard: null,
-      junkyardSeed: Date.now(),
       turnCount: 0,
     });
   }, []);
 
-  // Consume ingredients from stash
-  const consumeIngredients = (stash: Item[], ingredients: { name: string; quantity: number }[]): Item[] => {
-    const newStash = [...stash];
-    for (const ing of ingredients) {
-      let remaining = ing.quantity;
-      for (let i = newStash.length - 1; i >= 0 && remaining > 0; i--) {
-        if (newStash[i].name === ing.name) {
-          newStash.splice(i, 1);
-          remaining--;
-        }
-      }
-    }
-    return newStash;
-  };
-
-  const craftItem = useCallback((recipe: CraftingRecipe) => {
+  const dismissEmail = useCallback((emailId: string) => {
     setGameState(prev => {
       if (!prev) return prev;
-      
-      // Check currency
-      if (prev.player.currency < recipe.currencyCost) return prev;
-      
-      // Check ingredients
-      if (!hasIngredients(prev.player.stash, recipe.ingredients)) return prev;
-      
-      // Create the crafted item
-      const craftedItem: Item = {
-        id: uuidv4(),
-        name: recipe.name,
-        category: recipe.category as any,
-        rarity: 'uncommon' as Rarity,
-        condition: 100,
-        isDirty: false,
-        sizeW: 2,
-        sizeH: 2,
-        weight: 3,
-        baseValue: recipe.currencyCost,
-        hiddenModifiers: [],
-        revealedModifiers: [],
-        icon: recipe.icon,
-        batteryCapacity: recipe.output?.batteryCapacity,
-        storageWidth: recipe.output?.storageWidth,
-        storageHeight: recipe.output?.storageHeight,
-        storageMaxWeight: recipe.output?.storageMaxWeight,
-        movementType: recipe.output?.movementType,
-        solarRegenRate: recipe.output?.solarRegenRate,
-        pileRevealCount: recipe.output?.pileRevealCount,
-      };
-      
-      // Consume ingredients
-      const newStash = consumeIngredients(prev.player.stash, recipe.ingredients);
-      
+      const pending = prev.player.pendingEmails || [];
+      const email = pending.find(e => e.id === emailId);
+      if (!email) return prev;
       return {
         ...prev,
         player: {
           ...prev.player,
-          currency: prev.player.currency - recipe.currencyCost,
-          stash: [...newStash, craftedItem],
-        },
-      };
-    });
-  }, []);
-
-  const buildFrame = useCallback((frameType: string) => {
-    setGameState(prev => {
-      if (!prev) return prev;
-      
-      const frameInfo = HELPER_FRAMES[frameType as keyof typeof HELPER_FRAMES];
-      if (!frameInfo) return prev;
-      
-      // Find the recipe for this frame
-      const recipe = {
-        basic: { cost: 50, ingredients: [{ name: 'Steel Plate', quantity: 2 }, { name: 'Broken Gear', quantity: 3 }, { name: 'Copper Wire', quantity: 2 }] },
-        crawler: { cost: 200, ingredients: [{ name: 'Steel Plate', quantity: 4 }, { name: 'Motor Unit', quantity: 1 }, { name: 'Broken Gear', quantity: 4 }, { name: 'Copper Wire', quantity: 3 }] },
-        scout: { cost: 300, ingredients: [{ name: 'Titanium Scrap', quantity: 2 }, { name: 'Circuit Board', quantity: 2 }, { name: 'Power Cell', quantity: 1 }, { name: 'Copper Wire', quantity: 4 }] },
-      }[frameType];
-      
-      if (!recipe) return prev;
-      
-      // Check currency
-      if (prev.player.currency < recipe.cost) return prev;
-      
-      // Check ingredients
-      if (!hasIngredients(prev.player.stash, recipe.ingredients)) return prev;
-      
-      // Check capacity
-      const controlCapacity = 1 + prev.player.baseUpgrades.controlCapacity;
-      if (prev.player.helpers.length >= controlCapacity) return prev;
-      
-      // Create the new helper
-      const newHelper: HelperRobot = {
-        id: uuidv4(),
-        frameId: frameType as any,
-        components: {
-          mobility: createBasicMobility(),
-          modules: [createBasicStorage()],
-          battery: createBasicBattery(),
-          launcher: null,
-          loadedConsumables: [],
-        },
-        isDeployed: false,
-        isPrimary: false,
-      };
-      
-      // Consume ingredients
-      const newStash = consumeIngredients(prev.player.stash, recipe.ingredients);
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          currency: prev.player.currency - recipe.cost,
-          stash: newStash,
-          helpers: [...prev.player.helpers, newHelper],
+          pendingEmails: pending.filter(e => e.id !== emailId),
+          readEmails: [...(prev.player.readEmails || []), email],
         },
       };
     });
@@ -2357,770 +1308,27 @@ export function useGameState() {
     return primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
   }, [gameState]);
 
-  // Repair a component on a helper robot using scrap
-  const repairComponent = useCallback((helperId: string, slotType: 'mobility' | 'battery' | 'module', moduleIndex?: number) => {
-    setGameState(prev => {
-      if (!prev) return prev;
-      
-      const helperIndex = prev.player.helpers.findIndex(h => h.id === helperId);
-      if (helperIndex === -1) return prev;
-      
-      const helper = prev.player.helpers[helperIndex];
-      let component: Item | null = null;
-      
-      // Get the component to repair
-      switch (slotType) {
-        case 'mobility':
-          component = helper.components.mobility;
-          break;
-        case 'battery':
-          component = helper.components.battery;
-          break;
-        case 'module':
-          if (moduleIndex !== undefined && helper.components.modules[moduleIndex]) {
-            component = helper.components.modules[moduleIndex];
-          }
-          break;
-      }
-      
-      if (!component) return prev;
-      
-      // Calculate scrap needed: 1 scrap per 10% to repair (min 1)
-      const damagePercent = 100 - component.condition;
-      if (damagePercent === 0) return prev; // Already at 100%
-      
-      const scrapNeeded = Math.max(1, Math.ceil(damagePercent / 10));
-      
-      // Count available scrap
-      const scrapCount = prev.player.stash.filter(i => i.name === REPAIR_SCRAP_NAME).length;
-      if (scrapCount < scrapNeeded) return prev;
-      
-      // Consume scrap
-      let consumed = 0;
-      const newStash = prev.player.stash.filter(item => {
-        if (item.name === REPAIR_SCRAP_NAME && consumed < scrapNeeded) {
-          consumed++;
-          return false;
-        }
-        return true;
-      });
-      
-      // Repair the component to 100%
-      const repairedComponent = { ...component, condition: 100 };
-      
-      // Update the helper
-      const updatedComponents = { ...helper.components };
-      switch (slotType) {
-        case 'mobility':
-          updatedComponents.mobility = repairedComponent;
-          break;
-        case 'battery':
-          updatedComponents.battery = repairedComponent;
-          break;
-        case 'module':
-          if (moduleIndex !== undefined) {
-            const newModules = [...updatedComponents.modules];
-            newModules[moduleIndex] = repairedComponent;
-            updatedComponents.modules = newModules;
-          }
-          break;
-      }
-      
-      const updatedHelpers = [...prev.player.helpers];
-      updatedHelpers[helperIndex] = { ...helper, components: updatedComponents };
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          stash: newStash,
-          helpers: updatedHelpers,
-        },
-      };
-    });
-  }, []);
-
-  // Get repair cost for a component
-  const getRepairCost = useCallback((component: Item): number => {
-    const damagePercent = 100 - component.condition;
-    if (damagePercent === 0) return 0;
-    return Math.max(1, Math.ceil(damagePercent / 10));
-  }, []);
-
-  // Get pile reveal count from primary helper's scanner modules
-  const getPileRevealCount = useCallback((): number => {
-    if (!gameState) return 0;
-    const primary = getPrimaryHelper(gameState.player);
-    if (!primary) return 0;
-    return getHelperPileRevealCount(primary);
-  }, [gameState]);
-
-  // Get or generate items for a pile (for scanner preview)
-  // Takes world coordinates to ensure consistent seed across chunks
-  const getPilePreview = useCallback((pile: JunkPile, worldX?: number, worldY?: number): Item[] => {
-    // If items already pre-generated, return them
-    if (pile.preGeneratedItems) {
-      return pile.preGeneratedItems;
-    }
-    
-    const baseSeed = gameState?.infiniteJunkyard?.baseSeed ?? gameState?.junkyardSeed ?? 0;
-    
-    // Use world coordinates if provided, otherwise fall back to local coords
-    // This ensures the seed is unique per pile across all chunks
-    const pileWorldX = worldX ?? pile.x;
-    const pileWorldY = worldY ?? pile.y;
-    
-    // Calculate chunk from world coords for proper rarity scaling
-    const chunkX = Math.floor(pileWorldX / CHUNK_WIDTH);
-    const chunkY = Math.floor(pileWorldY / CHUNK_HEIGHT);
-    
-    // Seed combines base seed with world position for uniqueness
-    const pileSeed = baseSeed + pileWorldX * 1000 + pileWorldY;
-    
-    return generateLootForChunk(pileSeed, chunkX, chunkY);
-  }, [gameState?.infiniteJunkyard?.baseSeed, gameState?.junkyardSeed]);
-
-  // Buy an item from the shop
-  const buyShopItem = useCallback((itemId: string) => {
-    const shopItem = shopInventory.find(si => si.item.id === itemId);
-    if (!shopItem) return;
-    
-    setGameState(prev => {
-      if (!prev) return prev;
-      if (prev.player.currency < shopItem.buyPrice) return prev;
-      
-      // Add item to stash
-      const newItem = { ...shopItem.item, id: uuidv4() }; // New ID for the purchased item
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          currency: prev.player.currency - shopItem.buyPrice,
-          stash: [...prev.player.stash, newItem],
-        },
-      };
-    });
-    
-    // Remove item from shop inventory
-    const newInventory = shopInventory.filter(si => si.item.id !== itemId);
-    setShopInventory(newInventory);
-
-    // Update localStorage
-    try {
-      localStorage.setItem(
-        'junkrunner_shop',
-        JSON.stringify({
-          inventory: newInventory,
-          refreshTime: shopRefreshTime,
-        }),
-      );
-    } catch (err) {
-      console.warn('Failed to persist shop purchase.', err);
-    }
-  }, [shopInventory, shopRefreshTime]);
-
-  // ============ AUTOMATION FUNCTIONS ============
-
-  // Default priority settings
-  const DEFAULT_RARITY_ORDER: Rarity[] = ['legendary', 'epic', 'rare', 'uncommon', 'common'];
-  const DEFAULT_CATEGORY_ORDER: ItemCategory[] = ['component', 'module', 'battery', 'mobility', 'storage', 'scrap', 'junk'];
-
-  // Craft the cleaning bot
-  const craftCleaningBot = useCallback(() => {
-    setGameState(prev => {
-      if (!prev) return prev;
-      if (prev.player.automation.cleaningBot) return prev; // Already have one
-      
-      // Check currency (350)
-      if (prev.player.currency < 350) return prev;
-      
-      // Check ingredients
-      const ingredients = [
-        { name: 'Circuit Board', quantity: 3 },
-        { name: 'Motor Unit', quantity: 2 },
-        { name: 'Copper Wire', quantity: 4 },
-        { name: 'Broken Gear', quantity: 3 },
-      ];
-      
-      if (!hasIngredients(prev.player.stash, ingredients)) return prev;
-      
-      // Consume ingredients
-      const newStash = consumeIngredients(prev.player.stash, ingredients);
-      
-      // Create the cleaning bot
-      const cleaningBot: CleaningBot = {
-        id: uuidv4(),
-        isActive: true,
-        priority: {
-          rarityOrder: DEFAULT_RARITY_ORDER,
-          categoryOrder: DEFAULT_CATEGORY_ORDER,
-        },
-        lastProcessedTime: Date.now(),
-      };
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          currency: prev.player.currency - 350,
-          stash: newStash,
-          automation: {
-            ...prev.player.automation,
-            cleaningBot,
-          },
-        },
-      };
-    });
-  }, []);
-
-  // Toggle cleaning bot active state
-  const toggleCleaningBot = useCallback((active: boolean) => {
-    setGameState(prev => {
-      if (!prev) return prev;
-      if (!prev.player.automation.cleaningBot) return prev;
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          automation: {
-            ...prev.player.automation,
-            cleaningBot: {
-              ...prev.player.automation.cleaningBot,
-              isActive: active,
-            },
-          },
-        },
-      };
-    });
-  }, []);
-
-  // Update cleaning bot priorities
-  const updateCleaningBotPriorities = useCallback((priority: CleaningBotPriority) => {
-    setGameState(prev => {
-      if (!prev) return prev;
-      if (!prev.player.automation.cleaningBot) return prev;
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          automation: {
-            ...prev.player.automation,
-            cleaningBot: {
-              ...prev.player.automation.cleaningBot,
-              priority,
-            },
-          },
-        },
-      };
-    });
-  }, []);
-
-  // Process auto-cleaning when returning to base
-  const processAutoCleaning = useCallback((state: GameState): GameState => {
-    const bot = state.player.automation.cleaningBot;
-    if (!bot || !bot.isActive) return state;
-    
-    const maxSlots = 1 + state.player.baseUpgrades.cleaningSlots;
-    const availableSlots = maxSlots - state.player.cleaningJobs.length;
-    if (availableSlots <= 0) return state;
-    
-    // Get dirty items from stash
-    const dirtyItems = state.player.stash.filter(item => item.isDirty);
-    if (dirtyItems.length === 0) return state;
-    
-    // Sort by priority
-    const { rarityOrder, categoryOrder } = bot.priority;
-    
-    const sortedDirty = [...dirtyItems].sort((a, b) => {
-      // First sort by rarity priority
-      const rarityA = rarityOrder.indexOf(a.rarity);
-      const rarityB = rarityOrder.indexOf(b.rarity);
-      if (rarityA !== rarityB) return rarityA - rarityB;
-      
-      // Then by category priority
-      const categoryA = categoryOrder.indexOf(a.category);
-      const categoryB = categoryOrder.indexOf(b.category);
-      return categoryA - categoryB;
-    });
-    
-    // Take items to auto-clean (limited by available slots)
-    const itemsToClean = sortedDirty.slice(0, availableSlots);
-    if (itemsToClean.length === 0) return state;
-    
-    // Calculate cleaning speed multiplier
-    const speedMultiplier = 1 + state.player.baseUpgrades.cleaningSpeed * 0.2;
-    
-    // Create cleaning jobs for these items
-    const newJobs: CleaningJob[] = itemsToClean.map(item => ({
-      jobId: uuidv4(),
-      itemId: item.id,
-      item: { ...item },
-      startTime: Date.now(),
-      duration: getCleaningDuration(item, speedMultiplier),
-    }));
-    
-    // Remove items from stash and add to cleaning jobs
-    const itemIdsToRemove = new Set(itemsToClean.map(i => i.id));
-    const newStash = state.player.stash.filter(i => !itemIdsToRemove.has(i.id));
-    
-    return {
-      ...state,
-      player: {
-        ...state.player,
-        stash: newStash,
-        cleaningJobs: [...state.player.cleaningJobs, ...newJobs],
-        automation: {
-          ...state.player.automation,
-          cleaningBot: {
-            ...bot,
-            lastProcessedTime: Date.now(),
-          },
-        },
-      },
-    };
-  }, []);
-
-  // Enhanced returnToBase with auto-cleaning
-  // If at entrance: saves junkyard state. If not at entrance: abandons junkyard.
-  const returnToBaseWithAutoCleaning = useCallback((shouldRecharge: boolean = false) => {
-    setGameState(prev => {
-      if (!prev) return prev;
-      
-      const primary = getPrimaryHelper(prev.player);
-      const maxCapacity = primary ? getMaxBatteryCapacity(primary) : BASIC_BATTERY_CAPACITY;
-      
-      // Check if player is at entrance - if so, preserve junkyard
-      const atEntrance = prev.infiniteJunkyard && 
-        prev.player.playerX === prev.infiniteJunkyard.entranceX && 
-        prev.player.playerY === prev.infiniteJunkyard.entranceY;
-      
-      // If not at entrance, abandon junkyard (wipe it and generate new seed)
-      const shouldAbandon = prev.infiniteJunkyard && !atEntrance;
-      const newSeed = shouldAbandon ? Date.now() : prev.junkyardSeed;
-      const newInfiniteJunkyard = shouldAbandon ? null : prev.infiniteJunkyard;
-      
-      let newState: GameState;
-      
-      if (!shouldRecharge) {
-        // Just return without recharging
-        newState = {
-          ...prev,
-          infiniteJunkyard: newInfiniteJunkyard,
-          junkyardSeed: newSeed,
-          player: { 
-            ...prev.player, 
-            currentYardId: null,
-            playerX: 0,
-            playerY: 0,
-          },
-        };
-      } else {
-        // Calculate recharge cost
-        const chargeNeeded = maxCapacity - prev.player.currentCharge;
-        const chargerLevel = prev.player.baseUpgrades.chargerEfficiency ?? 0;
-        const chargingCost = getChargingCost(chargeNeeded, chargerLevel);
-        
-        // Check if player can afford it
-        if (prev.player.currency < chargingCost) {
-          // Can't afford full recharge - charge as much as possible
-          const costPerUnit = UPGRADES.chargerEfficiency.getValue(chargerLevel);
-          const affordableCharge = Math.floor(prev.player.currency / costPerUnit);
-          const actualCharge = Math.min(affordableCharge, chargeNeeded);
-          const actualCost = getChargingCost(actualCharge, chargerLevel);
-          
-          newState = {
-            ...prev,
-            infiniteJunkyard: newInfiniteJunkyard,
-            junkyardSeed: newSeed,
-            player: { 
-              ...prev.player, 
-              currentYardId: null,
-              playerX: 0,
-              playerY: 0,
-              currentCharge: prev.player.currentCharge + actualCharge,
-              currency: prev.player.currency - actualCost,
-            },
-          };
-        } else {
-          newState = {
-            ...prev,
-            infiniteJunkyard: newInfiniteJunkyard,
-            junkyardSeed: newSeed,
-            player: { 
-              ...prev.player, 
-              currentYardId: null,
-              playerX: 0,
-              playerY: 0,
-              currentCharge: maxCapacity,
-              currency: prev.player.currency - chargingCost,
-            },
-          };
-        }
-      }
-      
-      // Process auto-cleaning after returning to base
-      return processAutoCleaning(newState);
-    });
-  }, [getChargingCost, processAutoCleaning]);
-
-  // Fire a consumable at enemies (or use utility consumables like recall beacon)
-  // Returns 'recall' if a recall beacon was used, signaling the UI to switch screens
-  const fireConsumable = useCallback((consumableIndex: number): 'recall' | void => {
-    if (!gameState) return;
-    if (!gameState.infiniteJunkyard) return;
-    
-    const primary = gameState.player.helpers.find(h => h.isPrimary);
-    if (!primary) return;
-    
-    const consumable = primary.components.loadedConsumables[consumableIndex];
-    if (!consumable || !consumable.consumableType) return;
-    
-    // Get the consumable definition to find which enemies it counters
-    const consumableDef = getConsumableDefinition(consumable.consumableType as ConsumableType);
-    if (!consumableDef) {
-      toast({
-        title: `${consumable.icon} ${consumable.name} deployed!`,
-        description: `Effect active in your vicinity.`,
-      });
-      return;
-    }
-    
-    // Special case: Recall Beacon - teleport to base without resetting junkyard
-    if (consumable.consumableType === 'recall_beacon') {
-      setGameState(prev => {
-        if (!prev) return prev;
-        
-        // Remove the consumable from loaded consumables
-        const newHelpers = prev.player.helpers.map(helper => {
-          if (!helper.isPrimary) return helper;
-          
-          const newLoadedConsumables = [...helper.components.loadedConsumables];
-          newLoadedConsumables.splice(consumableIndex, 1);
-          
-          return {
-            ...helper,
-            components: {
-              ...helper.components,
-              loadedConsumables: newLoadedConsumables,
-            },
-          };
-        });
-        
-        // Return to base but PRESERVE the junkyard state
-        return {
-          ...prev,
-          player: {
-            ...prev.player,
-            helpers: newHelpers,
-            currentYardId: null,
-            playerX: prev.infiniteJunkyard?.entranceX ?? 0,
-            playerY: prev.infiniteJunkyard?.entranceY ?? 0,
-          },
-          // Keep infiniteJunkyard intact!
-        };
-      });
-      
-      toast({
-        title: `📡 Recall Beacon activated!`,
-        description: `Teleporting to base... Your junkyard progress is saved.`,
-      });
-      
-      return 'recall';
-    }
-    
-    // Map consumable types to status effects
-    const effectMapping: Record<string, { effect: EnemyStatusEffect; turns: number }> = {
-      'emp_grenade': { effect: 'stunned', turns: 3 },
-      'bait_canister': { effect: 'distracted', turns: 5 },
-      'cryo_spray': { effect: 'frozen', turns: 4 },
-      'sonic_pulse': { effect: 'scattered', turns: 3 },
-      'thermal_cloak': { effect: 'blinded', turns: 4 },
-      'data_spike': { effect: 'corrupted', turns: 4 },
-      'degausser': { effect: 'stunned', turns: 5 },
-      'neutralizer_foam': { effect: 'neutralized', turns: 99 },
-      'flash_flare': { effect: 'blinded', turns: 3 },
-      'holographic_decoy': { effect: 'distracted', turns: 6 },
-    };
-    
-    const effectConfig = effectMapping[consumable.consumableType] || { effect: 'stunned' as EnemyStatusEffect, turns: 3 };
-    
-    // Apply effects to all enemies in all loaded chunks
-    setGameState(prev => {
-      if (!prev || !prev.infiniteJunkyard) return prev;
-      
-      // Remove the consumable from loaded consumables
-      const newHelpers = prev.player.helpers.map(helper => {
-        if (!helper.isPrimary) return helper;
-        
-        const newLoadedConsumables = [...helper.components.loadedConsumables];
-        newLoadedConsumables.splice(consumableIndex, 1);
-        
-        return {
-          ...helper,
-          components: {
-            ...helper.components,
-            loadedConsumables: newLoadedConsumables,
-          },
-        };
-      });
-      
-      // Apply status effects to enemies in the current chunk
-      const { chunkX, chunkY } = worldToChunk(
-        prev.player.playerX, 
-        prev.player.playerY, 
-        CHUNK_WIDTH, 
-        CHUNK_HEIGHT
-      );
-      
-      const chunkKey = makeChunkKey(chunkX, chunkY);
-      const currentChunk = getChunkSafe(prev.infiniteJunkyard, chunkKey);
-      
-      let totalAffected = 0;
-      let affectedEnemyNames: string[] = [];
-      
-      if (currentChunk && currentChunk.enemies) {
-        const { localX, localY } = worldToLocal(
-          prev.player.playerX, 
-          prev.player.playerY, 
-          CHUNK_WIDTH, 
-          CHUNK_HEIGHT
-        );
-        
-        const { updatedEnemies, affectedCount } = applyStatusEffectToEnemies(
-          currentChunk.enemies,
-          consumableDef.countersEnemies,
-          { 
-            effect: effectConfig.effect, 
-            turnsRemaining: effectConfig.turns,
-            sourceConsumable: consumable.consumableType,
-          },
-          localX,
-          localY,
-          6 // Effect range
-        );
-        
-        totalAffected = affectedCount;
-        
-        // Get names of affected enemy types
-        if (affectedCount > 0) {
-          const affectedTypes = new Set<string>();
-          updatedEnemies.forEach(enemy => {
-            if (consumableDef.countersEnemies.includes(enemy.definitionId)) {
-              const def = getEnemyDefinition(enemy.definitionId);
-              if (def) affectedTypes.add(def.name);
-            }
-          });
-          affectedEnemyNames = Array.from(affectedTypes);
-        }
-        
-        // Update chunk with affected enemies
-        const updatedChunk = { ...currentChunk, enemies: updatedEnemies };
-        const newChunks = new Map(prev.infiniteJunkyard.chunks);
-        newChunks.set(chunkKey, updatedChunk);
-        
-        // Show toast with result
-        setTimeout(() => {
-          if (totalAffected > 0) {
-            toast({
-              title: `${consumable.icon} ${consumable.name} deployed!`,
-              description: `${consumableDef.effect} - Affected ${totalAffected} ${affectedEnemyNames.join(', ')}!`,
-            });
-          } else {
-            toast({
-              title: `${consumable.icon} ${consumable.name} deployed!`,
-              description: `No matching enemies in range. Counters: ${consumableDef.countersEnemies.map(id => getEnemyDefinition(id)?.name || id).slice(0, 2).join(', ')}...`,
-            });
-          }
-        }, 0);
-        
-        return {
-          ...prev,
-          player: {
-            ...prev.player,
-            helpers: newHelpers,
-          },
-          infiniteJunkyard: {
-            ...prev.infiniteJunkyard,
-            chunks: newChunks,
-          },
-        };
-      }
-      
-      // No enemies in current chunk
-      setTimeout(() => {
-        toast({
-          title: `${consumable.icon} ${consumable.name} deployed!`,
-          description: `No enemies nearby to affect.`,
-        });
-      }, 0);
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          helpers: newHelpers,
-        },
-      };
-    });
-  }, [gameState]);
-
-  // Load a consumable into the launcher
-  const loadConsumable = useCallback((consumableId: string) => {
-    if (!gameState) return;
-    
-    const primary = gameState.player.helpers.find(h => h.isPrimary);
-    if (!primary?.components.launcher) return;
-    
-    const launcherCapacity = primary.components.launcher.launcherCapacity || 1;
-    if (primary.components.loadedConsumables.length >= launcherCapacity) {
-      toast({
-        title: "Launcher Full",
-        description: "Remove a consumable or upgrade your launcher.",
-        variant: "destructive",
-      });
-      return;
-    }
-    
-    // Find the consumable in stash
-    const consumable = gameState.player.stash.find(item => item.id === consumableId);
-    if (!consumable || consumable.category !== 'consumable') return;
-    
-    setGameState(prev => {
-      if (!prev) return prev;
-      
-      // Remove from stash
-      const newStash = prev.player.stash.filter(item => item.id !== consumableId);
-      
-      // Add to loaded consumables
-      const newHelpers = prev.player.helpers.map(helper => {
-        if (!helper.isPrimary) return helper;
-        
-        return {
-          ...helper,
-          components: {
-            ...helper.components,
-            loadedConsumables: [...helper.components.loadedConsumables, consumable],
-          },
-        };
-      });
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          stash: newStash,
-          helpers: newHelpers,
-        },
-      };
-    });
-    
-    toast({
-      title: `${consumable.icon} ${consumable.name} loaded`,
-      description: "Ready to deploy in the junkyard.",
-    });
-  }, [gameState]);
-
-  // Unload a consumable from the launcher back to stash
-  const unloadConsumable = useCallback((consumableIndex: number) => {
-    if (!gameState) return;
-    
-    const primary = gameState.player.helpers.find(h => h.isPrimary);
-    if (!primary) return;
-    
-    const consumable = primary.components.loadedConsumables[consumableIndex];
-    if (!consumable) return;
-    
-    setGameState(prev => {
-      if (!prev) return prev;
-      
-      const newHelpers = prev.player.helpers.map(helper => {
-        if (!helper.isPrimary) return helper;
-        
-        const newLoadedConsumables = [...helper.components.loadedConsumables];
-        newLoadedConsumables.splice(consumableIndex, 1);
-        
-        return {
-          ...helper,
-          components: {
-            ...helper.components,
-            loadedConsumables: newLoadedConsumables,
-          },
-        };
-      });
-      
-      return {
-        ...prev,
-        player: {
-          ...prev.player,
-          stash: [...prev.player.stash, consumable],
-          helpers: newHelpers,
-        },
-      };
-    });
-  }, [gameState]);
-
-  // Get loaded consumables and launcher capacity for primary helper
-  const getLoadedConsumables = useCallback(() => {
-    if (!gameState) return { consumables: [], capacity: 0 };
-    
-    const primary = gameState.player.helpers.find(h => h.isPrimary);
-    if (!primary) return { consumables: [], capacity: 0 };
-    
-    const launcher = primary.components.launcher;
-    const capacity = launcher?.launcherCapacity || 0;
-    const consumables = primary.components.loadedConsumables || [];
-    
-    return { consumables, capacity };
-  }, [gameState]);
-
   return {
     gameState,
     isLoading,
     bagItems,
-    foundItems,
-    setFoundItems,
-    lastTerrainType,
-    setLastTerrainType,
     getCurrentBag,
     enterJunkyard,
     movePlayer,
     getCurrentPile,
     searchPile,
-    returnToBase: returnToBaseWithAutoCleaning,
+    returnToBase,
     moveToNextJunkyard,
     startCleaning,
     collectCleanedItem,
     sellItem,
-    sellMultipleItems,
     transferToStash,
     purchaseUpgrade,
     installComponent,
     removeComponent,
     purchaseBattery,
-    craftItem,
-    buildFrame,
     getMaxBattery,
-    repairComponent,
-    getRepairCost,
     resetGame,
-    getPileRevealCount,
-    getPilePreview,
-    shopInventory,
-    shopRefreshTime,
-    buyShopItem,
-    // Automation
-    craftCleaningBot,
-    toggleCleaningBot,
-    updateCleaningBotPriorities,
-    // Consumables
-    fireConsumable,
-    loadConsumable,
-    unloadConsumable,
-    getLoadedConsumables,
-    // Wait turn
-    waitTurn,
+    dismissEmail,
   };
 }
