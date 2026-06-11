@@ -930,8 +930,7 @@ export function useGameState() {
     setGameState(prev => {
       if (!prev) return prev;
       
-      const { UPGRADES } = require('@/data/upgradeData');
-      const upgrade = UPGRADES[upgradeId];
+      const upgrade = UPGRADES[upgradeId as keyof typeof UPGRADES];
       if (!upgrade) return prev;
       
       const currentLevel = prev.player.baseUpgrades[upgradeId as keyof typeof prev.player.baseUpgrades] as number;
@@ -955,6 +954,7 @@ export function useGameState() {
       };
     });
   }, []);
+
 
   // Install a component to a helper
   const installComponent = useCallback((helperId: string, slotType: 'mobility' | 'battery' | 'module', item: Item, moduleIndex?: number) => {
