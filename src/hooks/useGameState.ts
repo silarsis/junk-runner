@@ -28,6 +28,46 @@ import {
 } from '@/data/itemTemplates';
 import { generateJunkyard, isTilePassable, getTerrainAt } from '@/lib/terrainGenerator';
 import { HELPER_FRAMES, UPGRADES } from '@/data/upgradeData';
+import { STORYLINES, createStoryItem } from '@/data/storylines';
+import type { StoryEmail } from '@/types/game';
+
+// Chance per new junkyard to embed a story item
+const STORY_ITEM_CHANCE = 0.22;
+
+// Pick the next storyline+step the player should encounter. Returns null if all
+// active storylines completed. Prefers continuing an in-progress storyline.
+function pickNextStoryStep(
+  storyProgress: Record<string, number> | undefined,
+  completed: string[] | undefined,
+): { storylineId: string; stepIndex: number } | null {
+  const progress = storyProgress || {};
+  const done = new Set(completed || []);
+  // 1) Continue an in-progress storyline
+  for (const s of STORYLINES) {
+    if (done.has(s.id)) continue;
+    const step = progress[s.id] ?? 0;
+    if (step > 0 && step < s.steps.length) {
+      return { storylineId: s.id, stepIndex: step };
+    }
+  }
+  // 2) Start a new storyline (random among un-started, un-completed)
+  const available = STORYLINES.filter(s => !done.has(s.id) && !(progress[s.id] && progress[s.id] > 0));
+  if (available.length === 0) return null;
+  const pick = available[Math.floor(Math.random() * available.length)];
+  return { storylineId: pick.id, stepIndex: 0 };
+}
+
+function attachStoryItemIfLucky(
+  junkyard: Junkyard,
+  storyProgress: Record<string, number> | undefined,
+  completed: string[] | undefined,
+): Junkyard {
+  if (Math.random() > STORY_ITEM_CHANCE) return junkyard;
+  const next = pickNextStoryStep(storyProgress, completed);
+  if (!next) return junkyard;
+  return { ...junkyard, pendingStoryItem: next };
+}
+
 
 const STORAGE_KEY = 'junkrunner_save';
 const SEARCH_TURNS_REQUIRED = 5;
